@@ -28,7 +28,7 @@ def _orm_to_schema(s: ExtractionSchemaORM) -> ExtractionSchema:
             "enrichments_schema": s.enrichments_schema,
             "system_prompt": s.system_prompt,
             "embed_fields": s.embed_fields,
-            "categorize_fields": s.categorize_fields,
+            "enrichment_fields": s.enrichment_fields,
             "validation_rules": s.validation_rules,
             "created_at": s.created_at,
             "updated_at": s.updated_at,

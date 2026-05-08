@@ -82,7 +82,7 @@ class SchemaConfig(BaseModel):
     embed_fields: list[str] | None = Field(
         None, description="Field paths to embed for semantic search"
     )
-    categorize_fields: list[str] | None = Field(
+    enrichment_fields: list[str] | None = Field(
         None, description='Enrichment fields the LLM fills (e.g. ["category"])'
     )
     validation_rules: ValidationRules | None = Field(

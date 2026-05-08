@@ -5,29 +5,29 @@ from unittest.mock import MagicMock, patch
 from agents.enrichment_agent import categorize_document
 
 
-def _make_schema(categorize_fields=None, enrichments_schema=None):
+def _make_schema(enrichment_fields=None, enrichments_schema=None):
     schema = MagicMock()
     schema.key = "receipt"
     schema.name = "Receipt"
-    schema.categorize_fields = categorize_fields
+    schema.enrichment_fields = enrichment_fields
     schema.enrichments_schema = enrichments_schema
     return schema
 
 
 class TestCategorizeDocument:
-    def test_returns_empty_when_no_categorize_fields(self):
-        schema = _make_schema(categorize_fields=None)
+    def test_returns_empty_when_no_enrichment_fields(self):
+        schema = _make_schema(enrichment_fields=None)
         result = categorize_document(extracted_data={"total_amount": 50}, schema=schema)
         assert result == {}
 
     def test_returns_empty_when_no_enrichments_schema(self):
-        schema = _make_schema(categorize_fields=["category"], enrichments_schema=None)
+        schema = _make_schema(enrichment_fields=["category"], enrichments_schema=None)
         result = categorize_document(extracted_data={"total_amount": 50}, schema=schema)
         assert result == {}
 
     def test_returns_empty_when_field_not_in_enrichments_schema(self):
         schema = _make_schema(
-            categorize_fields=["category"],
+            enrichment_fields=["category"],
             enrichments_schema={"type": "object", "properties": {"status": {"type": "string"}}},
         )
         result = categorize_document(extracted_data={"total_amount": 50}, schema=schema)
@@ -46,7 +46,7 @@ class TestCategorizeDocument:
             },
         }
         schema = _make_schema(
-            categorize_fields=["category"],
+            enrichment_fields=["category"],
             enrichments_schema=enrichments_schema,
         )
 
@@ -70,7 +70,7 @@ class TestCategorizeDocument:
             "type": "object",
             "properties": {"category": {"type": "string", "enum": ["meals"]}},
         }
-        schema = _make_schema(categorize_fields=["category"], enrichments_schema=enrichments_schema)
+        schema = _make_schema(enrichment_fields=["category"], enrichments_schema=enrichments_schema)
 
         mock_provider = MagicMock()
         mock_provider.call_with_tool.return_value = {"category": "meals"}

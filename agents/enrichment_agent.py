@@ -6,7 +6,7 @@ fields in enrichments_schema that require semantic understanding (e.g. expense
 category). Fields that can be computed deterministically (policy compliance,
 status) are handled by the PolicyEngine, not here.
 
-Which fields the LLM fills is controlled by the `categorize_fields` list on the
+Which fields the LLM fills is controlled by the `enrichment_fields` list on the
 ExtractionSchemaORM. Only those fields are included in the tool call.
 """
 
@@ -26,22 +26,22 @@ def categorize_document(extracted_data: dict, schema: ExtractionSchemaORM) -> di
     """
     Use the LLM to populate the categorization fields defined on the schema.
 
-    Returns a partial enrichments dict (only the fields listed in categorize_fields).
-    Returns {} if the schema has no categorize_fields or no enrichments_schema.
+    Returns a partial enrichments dict (only the fields listed in enrichment_fields).
+    Returns {} if the schema has no enrichment_fields or no enrichments_schema.
     """
-    categorize_fields: list[str] = schema.categorize_fields or []
-    if not categorize_fields or not schema.enrichments_schema:
+    enrichment_fields: list[str] = schema.enrichment_fields or []
+    if not enrichment_fields or not schema.enrichments_schema:
         return {}
 
     all_props: dict = schema.enrichments_schema.get("properties", {})
-    cat_props = {k: v for k, v in all_props.items() if k in categorize_fields}
+    cat_props = {k: v for k, v in all_props.items() if k in enrichment_fields}
     if not cat_props:
         return {}
 
     tool_params = {
         "type": "object",
         "properties": cat_props,
-        "required": categorize_fields,
+        "required": enrichment_fields,
     }
 
     provider = get_provider("enrichment")
@@ -53,7 +53,7 @@ def categorize_document(extracted_data: dict, schema: ExtractionSchemaORM) -> di
         tool_name=f"categorize_{schema.key}",
         tool_description=(
             f"Classify the semantic fields of a {schema.name} document. "
-            f"Fields to fill: {', '.join(categorize_fields)}."
+            f"Fields to fill: {', '.join(enrichment_fields)}."
         ),
         tool_parameters=tool_params,
     )

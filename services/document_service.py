@@ -41,9 +41,9 @@ class DocumentService:
         data = await asyncio.to_thread(extract_document, file_bytes, schema)
         logger.info("Agent 1 extracted %d fields for schema '%s'", len(data), schema_key)
 
-        # Agent 2 — LLM categorization (only fields listed in categorize_fields)
+        # Agent 2 — LLM categorization (only fields listed in enrichment_fields)
         categorization: dict = {}
-        if schema.categorize_fields:
+        if schema.enrichment_fields:
             try:
                 categorization = await asyncio.to_thread(categorize_document, data, schema)
                 logger.info("Agent 2 categorized: %s", categorization)

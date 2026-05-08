@@ -28,7 +28,7 @@ class ExtractionSchemaORM(Base):
     embed_fields: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     # Fields from enrichments_schema that Agent 2 fills via LLM (e.g. ["category"]).
     # All other enrichment fields are computed deterministically by the validation engine.
-    categorize_fields: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    enrichment_fields: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     # Validation rules evaluated after extraction. Editable at runtime via the API.
     validation_rules: Mapped[dict | None] = mapped_column(JSONB)
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -50,8 +50,8 @@ interface FilePreview { url: string; type: string }
 
 export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
   const [preview, setPreview]       = useState<FilePreview | null>(null);
-  const [statusOpen, setStatusOpen] = useState(false);
-  const statusRef                   = useRef<HTMLDivElement>(null);
+  const [actionOpen, setActionOpen] = useState(false);
+  const actionRef                   = useRef<HTMLDivElement>(null);
   const queryClient                 = useQueryClient();
 
   // ── File preview ─────────────────────────────────────────────────────
@@ -79,15 +79,15 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
     return () => window.removeEventListener("keydown", fn);
   }, [onClose]);
 
-  // ── Close status dropdown on outside click ────────────────────────────
+  // ── Close action menu on outside click ───────────────────────────────
   useEffect(() => {
     const fn = (e: MouseEvent) => {
-      if (statusRef.current && !statusRef.current.contains(e.target as Node))
-        setStatusOpen(false);
+      if (actionRef.current && !actionRef.current.contains(e.target as Node))
+        setActionOpen(false);
     };
-    if (statusOpen) document.addEventListener("mousedown", fn);
+    if (actionOpen) document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
-  }, [statusOpen]);
+  }, [actionOpen]);
 
   // ── Mutations ─────────────────────────────────────────────────────────
   const deleteMutation = useMutation({
@@ -189,46 +189,54 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
               </div>
             </div>
 
-            {/* ── COMPANY POLICY VALIDATION ─────────────────────────── */}
+            {/* ── COMPANY POLICY ────────────────────────────────────── */}
             <div className="px-5 pt-5 pb-4 border-b border-gray-100 space-y-3">
+              {/* Header: label + status badge + action menu */}
               <div className="flex items-center justify-between">
                 <p className={t.sectionTitle}>Company Policy</p>
-                <button
-                  onClick={() => recomputeMutation.mutate()}
-                  disabled={recomputeMutation.isPending}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors disabled:opacity-40"
-                  title="Re-run AI validation"
-                >
-                  {recomputeMutation.isPending
-                    ? <Loader2 size={11} className="animate-spin" />
-                    : <RefreshCw size={11} />}
-                  Revalidate
-                </button>
-              </div>
 
-              {/* Status dropdown */}
-              <div className="relative" ref={statusRef}>
-                <button
-                  onClick={() => setStatusOpen((o) => !o)}
-                  disabled={statusMutation.isPending}
-                  className="flex items-center gap-1.5 disabled:opacity-40"
-                >
+                <div className="flex items-center gap-2">
                   <StatusBadge status={currentStatus} size="md" />
-                  <ChevronDown size={12} className="text-gray-400" />
-                </button>
-                {statusOpen && (
-                  <div className="absolute top-full left-0 mt-1.5 bg-white rounded-xl shadow-lg border border-gray-100 py-1.5 z-20 min-w-[170px]">
-                    {(["accepted", "needs_review"] as const).map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => { statusMutation.mutate(s); setStatusOpen(false); }}
-                        className={`w-full flex items-center px-3 py-2 hover:bg-gray-50 transition-colors ${currentStatus === s ? "opacity-40 pointer-events-none" : ""}`}
-                      >
-                        <StatusBadge status={s} size="sm" />
-                      </button>
-                    ))}
+
+                  {/* Action menu */}
+                  <div className="relative" ref={actionRef}>
+                    <button
+                      onClick={() => setActionOpen((o) => !o)}
+                      disabled={statusMutation.isPending || recomputeMutation.isPending}
+                      className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                    >
+                      {(statusMutation.isPending || recomputeMutation.isPending)
+                        ? <Loader2 size={12} className="animate-spin" />
+                        : <ChevronDown size={12} />}
+                    </button>
+
+                    {actionOpen && (
+                      <div className="absolute top-full right-0 mt-1.5 bg-white rounded-xl shadow-lg border border-gray-100 py-1.5 z-20 min-w-[190px]">
+                        {/* Status options */}
+                        {(["accepted", "needs_review"] as const)
+                          .filter((s) => s !== currentStatus)
+                          .map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => { statusMutation.mutate(s); setActionOpen(false); }}
+                              className="w-full flex items-center px-3 py-2 hover:bg-gray-50 transition-colors"
+                            >
+                              <StatusBadge status={s} size="sm" />
+                            </button>
+                          ))}
+                        <div className="mx-2 my-1 border-t border-gray-100" />
+                        {/* Revalidate */}
+                        <button
+                          onClick={() => { recomputeMutation.mutate(); setActionOpen(false); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                        >
+                          <RefreshCw size={11} />
+                          Re-run AI validation
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Violations */}

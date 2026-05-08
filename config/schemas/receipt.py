@@ -4,7 +4,7 @@ SCHEMA = SchemaConfig(
     key="receipt",
     name="Receipt",
     description="Extract structured data from retail and restaurant receipts",
-    categorize_fields=["category", "summary"],
+    enrichment_fields=["category", "summary"],
     embed_fields=["merchant_name", "line_items"],
     tool_schema={
         "type": "object",

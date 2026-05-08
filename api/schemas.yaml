@@ -87,7 +87,7 @@ components:
             type: string
           nullable: true
           description: Field paths to embed for semantic search
-        categorize_fields:
+        enrichment_fields:
           type: array
           items:
             type: string
