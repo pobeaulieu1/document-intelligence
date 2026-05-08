@@ -9,8 +9,8 @@ from agents.enrichment_agent import categorize_document
 from agents.extraction_agent import extract_document
 from db.connection import get_db
 from db.repository import ExtractionRepository, SchemaRepository
+from services.ai_validator import validate_with_ai
 from services.embedding import EmbeddingService, extract_embed_pairs, get_embedding_service
-from services.validation_engine import run_validation
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,22 @@ class DocumentService:
             except Exception as exc:
                 logger.warning("Agent 2 categorization failed, skipping: %s", exc)
 
-        # Validation engine — deterministic rule evaluation against schema rules
+        # Agent 3 — AI policy validation against plain-English rules
         rules = (schema.validation_rules or {}).get("rules", [])
-        validation_result = run_validation(rules, data, categorization)
+        validation_result: dict = {}
+        if rules:
+            try:
+                validation_result = await asyncio.to_thread(
+                    validate_with_ai, rules, data, categorization
+                )
+                logger.info("Agent 3 validated: %s", validation_result.get("status"))
+            except Exception as exc:
+                logger.warning("Agent 3 validation failed, marking needs_review: %s", exc)
+                validation_result = {
+                    "is_compliant": False,
+                    "violations": ["Validation unavailable — manual review required"],
+                    "status": "needs_review",
+                }
 
         enrichments = {**categorization, **validation_result}
 

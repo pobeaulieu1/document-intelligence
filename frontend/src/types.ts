@@ -35,22 +35,9 @@ export interface Extraction {
 
 // ── Schema / Policy types ─────────────────────────────────────────────────
 
-export interface ValidationRuleCondition {
-  source: "data" | "enrichments";
-  field: string;
-  operator: string;
-  value: unknown;
-}
-
-export interface ValidationRule {
+export interface PolicyRule {
   id: string;
-  description?: string | null;
-  source: "data" | "enrichments";
-  field: string;
-  operator: string;
-  value: unknown;
-  condition?: ValidationRuleCondition | null;
-  message: string;
+  text: string;
 }
 
 export interface Schema {
@@ -58,7 +45,7 @@ export interface Schema {
   key: string;
   name: string;
   description?: string | null;
-  validation_rules?: { rules: ValidationRule[] } | null;
+  validation_rules?: { rules: PolicyRule[] } | null;
   created_at: string;
   updated_at: string;
 }

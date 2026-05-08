@@ -1,11 +1,4 @@
-from models.schemas import (
-    SchemaConfig,
-    Operator,
-    Source,
-    ValidationRule,
-    ValidationRuleCondition,
-    ValidationRules,
-)
+from models.schemas import PolicyRule, SchemaConfig, ValidationRules
 
 SCHEMA = SchemaConfig(
     key="receipt",
@@ -52,7 +45,7 @@ SCHEMA = SchemaConfig(
             },
             "is_compliant": {
                 "type": "boolean",
-                "description": "Whether the expense satisfies all validation rules",
+                "description": "Whether the expense satisfies all policy rules",
             },
             "violations": {
                 "type": "array",
@@ -68,74 +61,29 @@ SCHEMA = SchemaConfig(
     },
     validation_rules=ValidationRules(
         rules=[
-            ValidationRule(
-                id="max_meal_amount",
-                description="Meal receipts must not exceed $50 per person",
-                source=Source.data,
-                field="total_amount",
-                operator=Operator.lte,
-                value=50,
-                condition=ValidationRuleCondition(
-                    source=Source.enrichments,
-                    field="category",
-                    operator=Operator.eq,
-                    value="meals",
+            PolicyRule(
+                id="meal_limit",
+                text=(
+                    "Meals must not exceed $50 per person. "
+                    "Count main-course portions in line_items (each ramen, burger, entree, or main dish = 1 person; multiply by quantity). "
+                    "Divide total_amount by that headcount before checking the $50 limit."
                 ),
-                message="Meal expense exceeds the $50 per-person limit",
             ),
-            ValidationRule(
-                id="max_transport_amount",
-                description="Transport receipts must not exceed $200 per trip",
-                source=Source.data,
-                field="total_amount",
-                operator=Operator.lte,
-                value=200,
-                condition=ValidationRuleCondition(
-                    source=Source.enrichments,
-                    field="category",
-                    operator=Operator.eq,
-                    value="transport",
+            PolicyRule(
+                id="transport_limit",
+                text="Transport expenses must not exceed $2000.",
+            ),
+            PolicyRule(
+                id="accommodation_limit",
+                text=(
+                    "Accommodation must not exceed $300 per night. "
+                    "Determine the per-night rate from line items directly (each dated room charge is one night). "
+                    "If only a total is given, divide by the number of night line items."
                 ),
-                message="Transport expense exceeds the $200 per-trip limit",
             ),
-            ValidationRule(
-                id="max_accommodation_amount",
-                description="Accommodation must not exceed $300 per night",
-                source=Source.data,
-                field="total_amount",
-                operator=Operator.lte,
-                value=300,
-                condition=ValidationRuleCondition(
-                    source=Source.enrichments,
-                    field="category",
-                    operator=Operator.eq,
-                    value="accommodation",
-                ),
-                message="Accommodation expense exceeds the $300 per-night limit",
-            ),
-            ValidationRule(
-                id="max_equipment_amount",
-                description="Equipment purchases must not exceed $1000 without pre-approval",
-                source=Source.data,
-                field="total_amount",
-                operator=Operator.lte,
-                value=1000,
-                condition=ValidationRuleCondition(
-                    source=Source.enrichments,
-                    field="category",
-                    operator=Operator.eq,
-                    value="equipment",
-                ),
-                message="Equipment purchase exceeds the $1000 limit and requires pre-approval",
-            ),
-            ValidationRule(
-                id="allowed_categories",
-                description="Expense category must be one of the approved types",
-                source=Source.enrichments,
-                field="category",
-                operator=Operator.in_,
-                value=["meals", "transport", "accommodation", "equipment", "other"],
-                message="Expense category is not in the approved list",
+            PolicyRule(
+                id="equipment_limit",
+                text="Equipment purchases must not exceed $1,000 without prior approval.",
             ),
         ]
     ),

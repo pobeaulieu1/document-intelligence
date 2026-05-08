@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  X, Shield, Cpu, ChevronDown, ChevronUp,
-  Loader2, CheckCircle2, AlertCircle, ArrowRight,
+  X, Shield, Cpu, Loader2, CheckCircle2, AlertCircle,
+  ArrowRight, Plus, Trash2, RefreshCw,
 } from "lucide-react";
-import { getSchema, updateSchemaPolicy, getLLMConfig } from "../api";
+import { getSchema, updateSchemaPolicy, recomputeAll, getLLMConfig } from "../api";
 import { t } from "../theme";
-import type { ValidationRule } from "../types";
+import type { PolicyRule } from "../types";
 
 interface Props {
   onClose: () => void;
@@ -16,27 +16,6 @@ type Tab = "policy" | "pipeline";
 
 const SCHEMA_KEY = "receipt";
 
-// ── Human labels for rule operators ──────────────────────────────────────
-const OPERATOR_LABEL: Record<string, string> = {
-  lte: "≤",
-  lt:  "<",
-  gte: "≥",
-  gt:  ">",
-  eq:  "=",
-  neq: "≠",
-  in:  "one of",
-  not_in: "not one of",
-};
-
-// ── Pretty-print amount limits for the hero number ────────────────────────
-function isAmountRule(rule: ValidationRule): boolean {
-  return (
-    rule.field === "total_amount" &&
-    ["lte", "lt", "gte", "gt"].includes(rule.operator) &&
-    typeof rule.value === "number"
-  );
-}
-
 export function SettingsPanel({ onClose }: Props) {
   const [tab, setTab] = useState<Tab>("policy");
 
@@ -44,8 +23,7 @@ export function SettingsPanel({ onClose }: Props) {
     <>
       <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]" onClick={onClose} />
 
-      <aside className="fixed right-0 top-0 bottom-0 z-50 w-[560px] bg-white shadow-2xl flex flex-col animate-slide-in">
-        {/* Header */}
+      <aside className="fixed right-0 top-0 bottom-0 z-50 w-[540px] bg-white shadow-2xl flex flex-col animate-slide-in">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <h2 className="text-base font-semibold text-gray-900">Settings</h2>
           <button onClick={onClose} className="text-gray-300 hover:text-gray-600 transition-colors">
@@ -53,7 +31,6 @@ export function SettingsPanel({ onClose }: Props) {
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-gray-100 px-6 shrink-0">
           <TabBtn active={tab === "policy"} onClick={() => setTab("policy")} icon={<Shield size={13} />}>
             Expense Policy
@@ -63,9 +40,8 @@ export function SettingsPanel({ onClose }: Props) {
           </TabBtn>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          {tab === "policy" && <PolicyEditor />}
+          {tab === "policy"   && <PolicyEditor />}
           {tab === "pipeline" && <PipelineInfo />}
         </div>
       </aside>
@@ -73,65 +49,71 @@ export function SettingsPanel({ onClose }: Props) {
   );
 }
 
-// ── Tab button ────────────────────────────────────────────────────────────
 function TabBtn({
-  active,
-  onClick,
-  icon,
-  children,
+  active, onClick, icon, children,
 }: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  children: React.ReactNode;
+  active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`
-        flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors
-        ${active
-          ? "border-brand-600 text-brand-600"
-          : "border-transparent text-gray-400 hover:text-gray-700"
-        }
-      `}
+      className={`flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors
+        ${active ? "border-brand-600 text-brand-600" : "border-transparent text-gray-400 hover:text-gray-700"}`}
     >
-      {icon}
-      {children}
+      {icon}{children}
     </button>
   );
 }
 
 // ── Policy editor ─────────────────────────────────────────────────────────
+
 function PolicyEditor() {
   const queryClient = useQueryClient();
+  const uid = useId();
 
   const { data: schema, isLoading, isError } = useQuery({
     queryKey: ["schema", SCHEMA_KEY],
     queryFn: () => getSchema(SCHEMA_KEY),
   });
 
-  const [editedRules, setEditedRules] = useState<ValidationRule[] | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [draft, setDraft] = useState<PolicyRule[] | null>(null);
+  const [savedBanner, setSavedBanner]       = useState(false);
+  const [showRecompute, setShowRecompute]   = useState(false);
 
-  const rules: ValidationRule[] = editedRules ?? (schema?.validation_rules?.rules ?? []);
+  const rules: PolicyRule[] = draft ?? (schema?.validation_rules?.rules ?? []);
 
-  const mutation = useMutation({
+  const saveMutation = useMutation({
     mutationFn: () => updateSchemaPolicy(SCHEMA_KEY, rules),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["schema", SCHEMA_KEY] });
-      queryClient.invalidateQueries({ queryKey: ["documents"] });
-      setEditedRules(null);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setDraft(null);
+      setSavedBanner(true);
+      setShowRecompute(true);
     },
   });
 
-  function patchRule(id: string, patch: Partial<ValidationRule>) {
-    setSaved(false);
-    setEditedRules(
-      rules.map((r) => (r.id === id ? { ...r, ...patch } : r))
-    );
+  const recomputeMutation = useMutation({
+    mutationFn: () => recomputeAll(SCHEMA_KEY),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents", SCHEMA_KEY] });
+      setShowRecompute(false);
+    },
+  });
+
+  function updateRule(id: string, text: string) {
+    setSavedBanner(false);
+    setDraft(rules.map((r) => (r.id === id ? { ...r, text } : r)));
+  }
+
+  function addRule() {
+    setSavedBanner(false);
+    const newId = `rule_${Date.now()}`;
+    setDraft([...rules, { id: newId, text: "" }]);
+  }
+
+  function removeRule(id: string) {
+    setSavedBanner(false);
+    setDraft(rules.filter((r) => r.id !== id));
   }
 
   if (isLoading) {
@@ -152,136 +134,139 @@ function PolicyEditor() {
     );
   }
 
-  const isDirty = editedRules !== null;
+  const isDirty = draft !== null;
 
   return (
     <div className="px-6 py-6 space-y-4">
+      {/* Header */}
       <div>
-        <p className="text-sm font-semibold text-gray-900">Spending limits & rules</p>
+        <p className="text-sm font-semibold text-gray-900">Expense policy rules</p>
         <p className="text-xs text-gray-400 mt-0.5">
-          Edit limits directly. The AI validates every new receipt against these rules automatically.
+          Write each rule in plain English. The AI reads them and evaluates every new receipt — including context like number of nights or people.
         </p>
       </div>
 
-      {rules.map((rule) => (
-        <RuleCard key={rule.id} rule={rule} onChange={(patch) => patchRule(rule.id, patch)} />
-      ))}
+      {/* Rules list */}
+      <div className="space-y-2">
+        {rules.map((rule, idx) => (
+          <div key={rule.id} className="flex gap-2 items-start group">
+            <span className="mt-2.5 text-xs font-bold text-gray-300 w-5 text-right shrink-0">
+              {idx + 1}
+            </span>
+            <textarea
+              id={`${uid}-rule-${rule.id}`}
+              value={rule.text}
+              onChange={(e) => updateRule(rule.id, e.target.value)}
+              rows={2}
+              placeholder="e.g. Meals must not exceed $50 per person"
+              className="flex-1 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl resize-none
+                focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400
+                hover:border-gray-300 transition-all leading-relaxed"
+            />
+            <button
+              onClick={() => removeRule(rule.id)}
+              className="mt-2 text-gray-200 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+              title="Remove rule"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Add rule */}
+      <button
+        onClick={addRule}
+        className="flex items-center gap-2 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors"
+      >
+        <Plus size={13} />
+        Add rule
+      </button>
 
       {/* Save bar */}
-      <div className="pt-2 flex items-center gap-3">
+      <div className="flex items-center gap-3 pt-1">
         <button
-          onClick={() => mutation.mutate()}
-          disabled={!isDirty || mutation.isPending}
+          onClick={() => saveMutation.mutate()}
+          disabled={!isDirty || saveMutation.isPending}
           className={`${t.btnPrimary} disabled:opacity-40 disabled:cursor-not-allowed`}
         >
-          {mutation.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+          {saveMutation.isPending && <Loader2 size={14} className="animate-spin" />}
           Save changes
         </button>
-        {saved && (
+        {savedBanner && !isDirty && (
           <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
             <CheckCircle2 size={13} />
             Saved
           </span>
         )}
-        {isDirty && !mutation.isPending && (
+        {isDirty && (
           <button
-            onClick={() => setEditedRules(null)}
+            onClick={() => { setDraft(null); setSavedBanner(false); }}
             className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
           >
             Discard
           </button>
         )}
       </div>
-    </div>
-  );
-}
 
-// ── Single rule card ──────────────────────────────────────────────────────
-function RuleCard({
-  rule,
-  onChange,
-}: {
-  rule: ValidationRule;
-  onChange: (patch: Partial<ValidationRule>) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const conditionCategory =
-    rule.condition?.field === "category" ? String(rule.condition.value) : null;
-
-  return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50 overflow-hidden">
-      {/* Summary row */}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-100/60 transition-colors"
-      >
-        {conditionCategory && (
-          <span className="text-xs font-bold text-gray-500 uppercase tracking-wider w-28 shrink-0 capitalize">
-            {conditionCategory}
-          </span>
-        )}
-        <span className="flex-1 text-sm text-gray-700 font-medium truncate">
-          {rule.description ?? rule.message}
-        </span>
-        {isAmountRule(rule) && (
-          <span className="text-sm font-bold text-brand-600 tabular-nums shrink-0">
-            {OPERATOR_LABEL[rule.operator]} ${rule.value as number}
-          </span>
-        )}
-        {open ? <ChevronUp size={14} className="text-gray-400 shrink-0" /> : <ChevronDown size={14} className="text-gray-400 shrink-0" />}
-      </button>
-
-      {/* Expanded edit form */}
-      {open && (
-        <div className="px-4 pb-4 pt-1 space-y-3 border-t border-gray-100 bg-white">
-          {rule.description !== undefined && (
-            <Label label="Description">
-              <input
-                type="text"
-                value={rule.description ?? ""}
-                onChange={(e) => onChange({ description: e.target.value })}
-                className={inputCls}
-              />
-            </Label>
-          )}
-
-          {isAmountRule(rule) && (
-            <Label label="Limit (USD)">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={rule.value as number}
-                  onChange={(e) => onChange({ value: Number(e.target.value) })}
-                  className={`${inputCls} pl-7`}
-                />
-              </div>
-            </Label>
-          )}
-
-          <Label label="Violation message">
-            <input
-              type="text"
-              value={rule.message}
-              onChange={(e) => onChange({ message: e.target.value })}
-              className={inputCls}
-            />
-          </Label>
+      {/* Recompute prompt */}
+      {showRecompute && !isDirty && (
+        <div className="rounded-xl border border-brand-200 bg-brand-50 p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-brand-800">Policy saved</p>
+            <p className="text-xs text-brand-600 mt-0.5">
+              Recompute existing receipts against the new rules? The AI will re-evaluate every receipt already in the system.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => recomputeMutation.mutate()}
+              disabled={recomputeMutation.isPending}
+              className={`${t.btnPrimary} text-xs px-3 py-2 disabled:opacity-40`}
+            >
+              {recomputeMutation.isPending
+                ? <><Loader2 size={13} className="animate-spin" /> Recomputing…</>
+                : <><RefreshCw size={13} /> Recompute all receipts</>
+              }
+            </button>
+            {recomputeMutation.isSuccess && (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
+                <CheckCircle2 size={13} />
+                {recomputeMutation.data.updated} updated
+              </span>
+            )}
+            {!recomputeMutation.isPending && !recomputeMutation.isSuccess && (
+              <button
+                onClick={() => setShowRecompute(false)}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                Skip
+              </button>
+            )}
+          </div>
         </div>
       )}
-    </div>
-  );
-}
 
-const inputCls =
-  "w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-all";
-
-function Label({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold text-gray-400 mb-1.5">{label}</p>
-      {children}
+      {/* Standalone recompute button (always available) */}
+      {!showRecompute && (
+        <div className="pt-2 border-t border-gray-100">
+          <button
+            onClick={() => recomputeMutation.mutate()}
+            disabled={recomputeMutation.isPending}
+            className={`${t.btnGhost} text-xs disabled:opacity-40`}
+          >
+            {recomputeMutation.isPending
+              ? <><Loader2 size={13} className="animate-spin" /> Recomputing…</>
+              : <><RefreshCw size={13} /> Recompute all receipts</>
+            }
+          </button>
+          {recomputeMutation.isSuccess && (
+            <span className="ml-3 text-xs text-emerald-600 font-semibold">
+              ✓ {recomputeMutation.data.updated} updated
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -292,15 +277,23 @@ const AGENT_META: Record<string, { title: string; description: string; color: st
   extraction: {
     title: "Extraction Agent",
     description:
-      "Reads the uploaded document (image or PDF) and extracts structured data: merchant name, total amount, date, currency, payment method, and individual line items.",
+      "Reads the uploaded document (image or PDF) using vision and extracts structured data: merchant name, total amount, date, currency, payment method, number of nights or people when visible, and individual line items.",
     color: "bg-brand-50 border-brand-200 text-brand-700",
   },
   enrichment: {
     title: "Enrichment Agent",
     description:
-      "Classifies the expense into a category (meals, transport, accommodation, equipment) then validates it against every rule in your expense policy. Sets the final status to Accepted or Needs Review.",
-    color: "bg-emerald-50 border-emerald-200 text-emerald-700",
+      "Classifies the expense into a category (meals, transport, accommodation, equipment) based on semantic understanding of the merchant and line items.",
+    color: "bg-sky-50 border-sky-200 text-sky-700",
   },
+};
+
+const VALIDATION_META = {
+  title: "Policy Validation Agent",
+  description:
+    "Evaluates the expense against your plain-English policy rules. Reasons contextually — a $900 hotel stay for 3 nights is $300/night. Returns accepted or needs_review with specific violation messages.",
+  color: "bg-emerald-50 border-emerald-200 text-emerald-700",
+  model: "same as Enrichment",
 };
 
 function PipelineInfo() {
@@ -313,7 +306,7 @@ function PipelineInfo() {
     return (
       <div className="flex items-center justify-center py-20 gap-2 text-gray-400">
         <Loader2 size={16} className="animate-spin" />
-        <span className="text-sm">Loading pipeline info…</span>
+        <span className="text-sm">Loading…</span>
       </div>
     );
   }
@@ -328,68 +321,61 @@ function PipelineInfo() {
   }
 
   const agentEntries = Object.entries(config.agents);
+  const allSteps = [
+    ...agentEntries.map(([key, agent]) => ({
+      key,
+      meta: AGENT_META[key] ?? {
+        title: `${key.charAt(0).toUpperCase() + key.slice(1)} Agent`,
+        description: "",
+        color: "bg-gray-50 border-gray-200 text-gray-700",
+      },
+      model: agent.model,
+      provider: agent.provider,
+    })),
+    {
+      key: "validation",
+      meta: VALIDATION_META,
+      model: config.agents["enrichment"]?.model ?? "—",
+      provider: config.agents["enrichment"]?.provider ?? "anthropic",
+    },
+  ];
 
   return (
     <div className="px-6 py-6 space-y-6">
       <div>
         <p className="text-sm font-semibold text-gray-900">Under the hood</p>
         <p className="text-xs text-gray-400 mt-0.5">
-          Each receipt flows through {agentEntries.length} AI agents powered by Anthropic Claude.
+          Every receipt flows through {allSteps.length} AI steps, each powered by Anthropic Claude.
         </p>
       </div>
 
-      {/* Pipeline flow */}
-      <div className="space-y-3">
-        {agentEntries.map(([key, agent], idx) => {
-          const meta = AGENT_META[key] ?? {
-            title: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) + " Agent",
-            description: "",
-            color: "bg-gray-50 border-gray-200 text-gray-700",
-          };
-          return (
-            <div key={key}>
-              <div className={`rounded-xl border p-4 space-y-3 ${meta.color}`}>
-                {/* Step header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-bold opacity-60 uppercase tracking-widest">
-                        Step {idx + 1}
-                      </span>
-                    </div>
-                    <p className="text-sm font-bold">{meta.title}</p>
-                  </div>
-                  {/* Model chip */}
-                  <div className="shrink-0 text-right">
-                    <p className="text-[10px] font-semibold opacity-60 uppercase tracking-wider mb-0.5">Model</p>
-                    <p className="text-xs font-mono font-bold">{agent.model}</p>
-                    <p className="text-[10px] opacity-60 capitalize mt-0.5">{agent.provider}</p>
-                  </div>
+      <div className="space-y-2">
+        {allSteps.map((step, idx) => (
+          <div key={step.key}>
+            <div className={`rounded-xl border p-4 space-y-2.5 ${step.meta.color}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold opacity-50 uppercase tracking-widest mb-0.5">
+                    Step {idx + 1}
+                  </p>
+                  <p className="text-sm font-bold">{step.meta.title}</p>
                 </div>
-                <p className="text-xs leading-relaxed opacity-80">{meta.description}</p>
+                <div className="shrink-0 text-right">
+                  <p className="text-[10px] font-semibold opacity-50 uppercase tracking-wider mb-0.5">Model</p>
+                  <p className="text-xs font-mono font-bold leading-tight">{step.model}</p>
+                  <p className="text-[10px] opacity-50 capitalize mt-0.5">{step.provider}</p>
+                </div>
               </div>
-
-              {/* Arrow connector */}
-              {idx < agentEntries.length - 1 && (
-                <div className="flex justify-center py-1">
-                  <ArrowRight size={14} className="text-gray-300 rotate-90" />
-                </div>
-              )}
+              <p className="text-xs leading-relaxed opacity-75">{step.meta.description}</p>
             </div>
-          );
-        })}
+            {idx < allSteps.length - 1 && (
+              <div className="flex justify-center py-0.5">
+                <ArrowRight size={13} className="text-gray-300 rotate-90" />
+              </div>
+            )}
+          </div>
+        ))}
       </div>
-
-      {/* Embeddings note */}
-      {config.embeddings && config.embeddings.provider !== "none" && (
-        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-1">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Embeddings</p>
-          <p className="text-sm font-semibold text-gray-800">{config.embeddings.model}</p>
-          <p className="text-xs text-gray-400">
-            {config.embeddings.dimensions}-dimension vectors stored per receipt for semantic search.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

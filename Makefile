@@ -26,6 +26,9 @@ migrate:
 seed:
 	python config/seed_schemas.py
 
+reseed:
+	python config/seed_schemas.py --force
+
 setup: install db migrate seed
 	@echo "Setup complete — run 'make dev' to start the server"
 

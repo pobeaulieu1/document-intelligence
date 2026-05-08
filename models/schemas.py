@@ -47,8 +47,13 @@ class ValidationRule(BaseModel):
     message: str = Field(..., description="Message shown when the rule is violated")
 
 
+class PolicyRule(BaseModel):
+    id: str = Field(..., description="Short unique identifier")
+    text: str = Field(..., description="Plain English policy rule evaluated by the AI")
+
+
 class ValidationRules(BaseModel):
-    rules: list[ValidationRule]
+    rules: list[PolicyRule]
 
 
 class RevalidateResult(BaseModel):

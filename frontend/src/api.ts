@@ -1,4 +1,4 @@
-import type { Extraction, LLMConfig, Schema, ValidationRule } from "./types";
+import type { Extraction, LLMConfig, PolicyRule, Schema } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -54,7 +54,7 @@ export async function getSchema(key: string): Promise<Schema> {
 
 export async function updateSchemaPolicy(
   key: string,
-  rules: ValidationRule[]
+  rules: PolicyRule[]
 ): Promise<Schema> {
   return json(
     await fetch(`/schemas/${key}`, {
@@ -63,6 +63,33 @@ export async function updateSchemaPolicy(
       body: JSON.stringify({ rules }),
     })
   );
+}
+
+export async function revalidateDocument(
+  schemaKey: string,
+  docId: string
+): Promise<Extraction> {
+  await json(
+    await fetch(`/schemas/${schemaKey}/documents/${docId}/validate`, { method: "POST" })
+  );
+  return json(await fetch(`/schemas/${schemaKey}/documents/${docId}`));
+}
+
+export async function recomputeAll(
+  key: string
+): Promise<{ updated: number; failed: number; total: number }> {
+  const docs = await listDocuments(key);
+  let updated = 0;
+  let failed = 0;
+  for (const doc of docs) {
+    try {
+      await revalidateDocument(key, doc.id);
+      updated++;
+    } catch {
+      failed++;
+    }
+  }
+  return { updated, failed, total: docs.length };
 }
 
 // ── Config ────────────────────────────────────────────────────────────────

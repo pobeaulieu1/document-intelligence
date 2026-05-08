@@ -3,10 +3,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   X, FileText, AlertTriangle, Trash2, Loader2,
   ChevronDown, ChevronRight, CheckCircle2,
-  Utensils, Car, BedDouble, Monitor, Package,
+  Utensils, Car, BedDouble, Monitor, Package, RefreshCw,
   type LucideIcon,
 } from "lucide-react";
-import { deleteDocument, updateDocumentStatus, fileUrl } from "../api";
+import { deleteDocument, revalidateDocument, updateDocumentStatus, fileUrl } from "../api";
 import { t } from "../theme";
 import { StatusBadge } from "./StatusBadge";
 import type { Extraction } from "../types";
@@ -97,6 +97,15 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
     },
   });
 
+  // ── Recompute ────────────────────────────────────────────────────────
+  const recomputeMutation = useMutation({
+    mutationFn: () => revalidateDocument(doc.schema_key, doc.id),
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["documents", doc.schema_key] });
+      onDocChange(updated);
+    },
+  });
+
   const { data, enrichments } = doc;
   const category = enrichments?.category;
   const cat = category ? CATEGORY[category] ?? CATEGORY.other : null;
@@ -163,27 +172,41 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
               </div>
             )}
 
-            {/* Status + change button */}
+            {/* Status + actions */}
             <div className="flex items-center justify-between">
               <StatusBadge status={currentStatus} size="md" />
 
-              {currentStatus === "accepted" ? (
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={() => statusMutation.mutate("needs_review")}
-                  disabled={statusMutation.isPending}
-                  className="text-xs font-semibold text-amber-600 hover:text-amber-700 hover:bg-amber-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                  onClick={() => recomputeMutation.mutate()}
+                  disabled={recomputeMutation.isPending}
+                  className="text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                  title="Re-run AI validation"
                 >
-                  {statusMutation.isPending ? <Loader2 size={12} className="animate-spin inline" /> : "Flag for review"}
+                  {recomputeMutation.isPending
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <RefreshCw size={12} />
+                  }
                 </button>
-              ) : (
-                <button
-                  onClick={() => statusMutation.mutate("accepted")}
-                  disabled={statusMutation.isPending}
-                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
-                >
-                  {statusMutation.isPending ? <Loader2 size={12} className="animate-spin inline" /> : "Mark accepted"}
-                </button>
-              )}
+
+                {currentStatus === "accepted" ? (
+                  <button
+                    onClick={() => statusMutation.mutate("needs_review")}
+                    disabled={statusMutation.isPending}
+                    className="text-xs font-semibold text-amber-600 hover:text-amber-700 hover:bg-amber-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                  >
+                    {statusMutation.isPending ? <Loader2 size={12} className="animate-spin inline" /> : "Flag for review"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => statusMutation.mutate("accepted")}
+                    disabled={statusMutation.isPending}
+                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                  >
+                    {statusMutation.isPending ? <Loader2 size={12} className="animate-spin inline" /> : "Mark accepted"}
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Violations */}
