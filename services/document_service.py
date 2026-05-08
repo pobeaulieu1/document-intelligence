@@ -31,6 +31,7 @@ class DocumentService:
         schema_key: str,
         file_bytes: bytes,
         file_name: str | None = None,
+        file_content_type: str | None = None,
     ) -> dict:
         schema = await self._schema_repo.get_by_key(schema_key)
         if schema is None:
@@ -72,6 +73,8 @@ class DocumentService:
             enrichments=enrichments,
             file_hash=hashlib.sha256(file_bytes).hexdigest(),
             file_name=file_name,
+            file_data=file_bytes,
+            file_content_type=file_content_type,
             embeddings=embeddings,
         )
 

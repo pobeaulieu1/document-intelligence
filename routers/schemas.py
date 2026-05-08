@@ -1,4 +1,7 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,6 +9,10 @@ from db.connection import get_db
 from db.models import ExtractionSchemaORM
 from db.repository import SchemaRepository
 from models.schemas import ExtractionSchema, SchemaConfig
+
+
+class PolicyUpdate(BaseModel):
+    rules: list[dict[str, Any]]
 
 router = APIRouter(prefix="/schemas", tags=["schemas"])
 
@@ -52,4 +59,15 @@ async def get_schema(key: str, db: AsyncSession = Depends(get_db)) -> Extraction
     schema = await SchemaRepository(db).get_by_key(key)
     if schema is None:
         raise HTTPException(status_code=404, detail=f"Schema '{key}' not found")
+    return _orm_to_schema(schema)
+
+
+@router.patch("/{key}", response_model=ExtractionSchema)
+async def update_schema_policy(
+    key: str, body: PolicyUpdate, db: AsyncSession = Depends(get_db)
+) -> ExtractionSchema:
+    try:
+        schema = await SchemaRepository(db).update_validation_rules(key, body.rules)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     return _orm_to_schema(schema)

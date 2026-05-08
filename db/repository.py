@@ -54,6 +54,8 @@ class ExtractionRepository:
         enrichments: dict | None = None,
         file_hash: str | None = None,
         file_name: str | None = None,
+        file_data: bytes | None = None,
+        file_content_type: str | None = None,
         confidence: float = 0.95,
         embeddings: list[tuple[str, str, list[float]]] | None = None,
     ) -> ExtractionORM:
@@ -63,6 +65,8 @@ class ExtractionRepository:
             enrichments=enrichments,
             file_hash=file_hash,
             file_name=file_name,
+            file_data=file_data,
+            file_content_type=file_content_type,
             confidence=confidence,
         )
         if embeddings:
@@ -89,6 +93,26 @@ class ExtractionRepository:
             raise KeyError(f"Extraction {extraction_id} not found")
         extraction.enrichments = enrichments
         await self._session.commit()
+
+    async def delete_by_id(self, extraction_id: uuid.UUID) -> None:
+        result = await self._session.execute(
+            select(ExtractionORM).where(ExtractionORM.id == extraction_id)
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            await self._session.delete(row)
+            await self._session.commit()
+
+    async def get_file(self, extraction_id: uuid.UUID) -> tuple[bytes, str] | None:
+        """Return (file_data, content_type) without loading the full ORM row."""
+        result = await self._session.execute(
+            select(ExtractionORM.file_data, ExtractionORM.file_content_type)
+            .where(ExtractionORM.id == extraction_id)
+        )
+        row = result.one_or_none()
+        if row is None or row.file_data is None:
+            return None
+        return (row.file_data, row.file_content_type or "application/octet-stream")
 
     async def get_by_id(self, extraction_id: uuid.UUID) -> ExtractionORM | None:
         result = await self._session.execute(

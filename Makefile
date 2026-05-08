@@ -1,4 +1,4 @@
-.PHONY: install generate db migrate seed setup dev test
+.PHONY: install generate db migrate seed setup dev test ui ui-install
 
 install:
 	pip install -r requirements.txt
@@ -34,3 +34,9 @@ dev:
 
 test:
 	pytest tests/ -v
+
+ui-install:
+	cd frontend && npm install
+
+ui:
+	cd frontend && npm run dev

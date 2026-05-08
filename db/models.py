@@ -1,9 +1,9 @@
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, deferred, mapped_column, relationship
 
 from config import settings
 
@@ -50,6 +50,9 @@ class ExtractionORM(Base):
     )
     file_hash: Mapped[str | None] = mapped_column(String(64))
     file_name: Mapped[str | None] = mapped_column(Text)
+    file_content_type: Mapped[str | None] = mapped_column(Text)
+    # deferred: excluded from default SELECT — only loaded when explicitly requested
+    file_data: Mapped[bytes | None] = deferred(mapped_column(LargeBinary))
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)
     enrichments: Mapped[dict | None] = mapped_column(JSONB)
     confidence: Mapped[float] = mapped_column(Numeric(4, 3), nullable=False, default=0.95)

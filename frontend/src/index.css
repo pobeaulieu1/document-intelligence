@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ──────────────────────────────────────────────────────────
+   Design tokens as CSS variables.
+   Override here to change the whole app without touching Tailwind.
+   ────────────────────────────────────────────────────────── */
+:root {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+
+  /* Brand */
+  --color-brand:        #7c3aed;
+  --color-brand-hover:  #6d28d9;
+  --color-brand-light:  #ede9fe;
+
+  /* Surfaces */
+  --color-bg:      #f9fafb;
+  --color-surface: #ffffff;
+  --color-border:  #e5e7eb;
+  --color-border-subtle: #f3f4f6;
+
+  /* Text */
+  --color-text-primary:   #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-muted:     #9ca3af;
+
+  /* Status */
+  --color-success-bg:   #ecfdf5;
+  --color-success-text: #065f46;
+  --color-warning-bg:   #fffbeb;
+  --color-warning-text: #92400e;
+  --color-danger-bg:    #fef2f2;
+  --color-danger-text:  #991b1b;
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+  }
+}

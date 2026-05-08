@@ -100,7 +100,57 @@ paths:
                 items:
                   $ref: "#/components/schemas/ExtractionResult"
 
+  /schemas/{key}/documents/{id}/file:
+    get:
+      summary: Download the original uploaded file
+      operationId: get_document_file
+      tags: [documents]
+      parameters:
+        - $ref: "common.yaml#/components/parameters/SchemaKey"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Raw file bytes with correct Content-Type
+          content:
+            image/jpeg: {}
+            image/png: {}
+            image/webp: {}
+            application/pdf: {}
+        "404":
+          description: Document or file not found
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"
+
   /schemas/{key}/documents/{id}:
+    delete:
+      summary: Delete an extraction
+      operationId: delete_document
+      tags: [documents]
+      parameters:
+        - $ref: "common.yaml#/components/parameters/SchemaKey"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"
+
     get:
       summary: Get a specific extraction
       operationId: get_document
