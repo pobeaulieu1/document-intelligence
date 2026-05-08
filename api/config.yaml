@@ -1,0 +1,54 @@
+components:
+  schemas:
+
+    AgentConfig:
+      type: object
+      required: [provider, model]
+      properties:
+        provider:
+          type: string
+          description: LLM provider identifier (e.g. "anthropic", "google")
+        model:
+          type: string
+          description: Model name/ID
+
+    EmbeddingConfig:
+      type: object
+      required: [provider, model, dimensions]
+      properties:
+        provider:
+          type: string
+          description: Embedding provider identifier (e.g. "google", "none")
+        model:
+          type: string
+          description: Embedding model name
+        dimensions:
+          type: integer
+          description: Embedding vector dimensionality
+
+    LLMConfig:
+      type: object
+      required: [agents, embeddings]
+      properties:
+        agents:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/AgentConfig"
+          description: Agent name → provider/model config
+        embeddings:
+          $ref: "#/components/schemas/EmbeddingConfig"
+
+paths:
+
+  /config/llm:
+    get:
+      summary: Get LLM provider configuration
+      operationId: get_llm_config
+      tags: [config]
+      responses:
+        "200":
+          description: Current LLM configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMConfig"

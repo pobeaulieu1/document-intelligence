@@ -1,0 +1,128 @@
+components:
+  schemas:
+
+    ExtractionResult:
+      type: object
+      required: [id, schema_key, data, confidence, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        schema_key:
+          type: string
+        file_name:
+          type: string
+          nullable: true
+        data:
+          type: object
+          additionalProperties: true
+          description: Extracted fields — shape defined by schema.tool_schema
+        enrichments:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Enrichment fields — category, is_compliant, violations, status
+        confidence:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.95
+        created_at:
+          type: string
+          format: date-time
+
+paths:
+
+  /schemas/{key}/documents:
+    post:
+      summary: Upload and extract a document
+      operationId: upload_document
+      tags: [documents]
+      parameters:
+        - $ref: "common.yaml#/components/parameters/SchemaKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image or PDF, max 20 MB
+      responses:
+        "201":
+          description: Document extracted and stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionResult"
+        "404":
+          description: Schema not found
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"
+        "413":
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"
+        "415":
+          description: Unsupported file type
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"
+        "422":
+          description: Extraction failed
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"
+
+    get:
+      summary: List extractions for a schema
+      operationId: list_documents
+      tags: [documents]
+      parameters:
+        - $ref: "common.yaml#/components/parameters/SchemaKey"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExtractionResult"
+
+  /schemas/{key}/documents/{id}:
+    get:
+      summary: Get a specific extraction
+      operationId: get_document
+      tags: [documents]
+      parameters:
+        - $ref: "common.yaml#/components/parameters/SchemaKey"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionResult"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"

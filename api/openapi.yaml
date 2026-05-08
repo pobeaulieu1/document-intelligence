@@ -1,0 +1,75 @@
+openapi: "3.1.0"
+
+info:
+  title: Document Intelligence Platform
+  version: "0.2.0"
+  description: Generic multi-agent platform for document extraction, enrichment, and validation
+
+tags:
+  - name: schemas
+    description: Extraction schema management
+  - name: documents
+    description: Document upload and extraction
+  - name: validation
+    description: Validation rule management and re-validation
+  - name: config
+    description: Runtime configuration (read-only)
+  - name: system
+    description: Service health
+
+paths:
+  /schemas:
+    $ref: "schemas.yaml#/paths/~1schemas"
+  /schemas/{key}:
+    $ref: "schemas.yaml#/paths/~1schemas~1{key}"
+  /schemas/{key}/documents:
+    $ref: "documents.yaml#/paths/~1schemas~1{key}~1documents"
+  /schemas/{key}/documents/{id}:
+    $ref: "documents.yaml#/paths/~1schemas~1{key}~1documents~1{id}"
+  /schemas/{key}/validation:
+    $ref: "validation.yaml#/paths/~1schemas~1{key}~1validation"
+  /schemas/{key}/documents/{id}/validate:
+    $ref: "validation.yaml#/paths/~1schemas~1{key}~1documents~1{id}~1validate"
+  /config/llm:
+    $ref: "config.yaml#/paths/~1config~1llm"
+  /health:
+    get:
+      summary: Health check
+      operationId: health_check
+      tags: [system]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HealthResponse"
+
+components:
+  parameters:
+    $ref: "common.yaml#/components/parameters"
+  schemas:
+    HealthResponse:
+      $ref: "common.yaml#/components/schemas/HealthResponse"
+    HTTPError:
+      $ref: "common.yaml#/components/schemas/HTTPError"
+    ValidationRuleCondition:
+      $ref: "schemas.yaml#/components/schemas/ValidationRuleCondition"
+    ValidationRule:
+      $ref: "schemas.yaml#/components/schemas/ValidationRule"
+    ValidationRules:
+      $ref: "schemas.yaml#/components/schemas/ValidationRules"
+    SchemaConfig:
+      $ref: "schemas.yaml#/components/schemas/SchemaConfig"
+    ExtractionSchema:
+      $ref: "schemas.yaml#/components/schemas/ExtractionSchema"
+    ExtractionResult:
+      $ref: "documents.yaml#/components/schemas/ExtractionResult"
+    RevalidateResult:
+      $ref: "validation.yaml#/components/schemas/RevalidateResult"
+    AgentConfig:
+      $ref: "config.yaml#/components/schemas/AgentConfig"
+    EmbeddingConfig:
+      $ref: "config.yaml#/components/schemas/EmbeddingConfig"
+    LLMConfig:
+      $ref: "config.yaml#/components/schemas/LLMConfig"

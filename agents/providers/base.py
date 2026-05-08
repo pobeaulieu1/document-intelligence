@@ -1,0 +1,38 @@
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class LLMProvider(Protocol):
+    """
+    Common interface for all LLM providers.
+
+    Supports both document-grounded calls (Agent 1: extraction) and text-only
+    calls (Agent 2: enrichment). Pass file_bytes=None for text-only calls.
+    """
+
+    def call_with_tool(
+        self,
+        system_prompt: str,
+        user_message: str,
+        tool_name: str,
+        tool_description: str,
+        tool_parameters: dict,
+        file_bytes: bytes | None = None,
+        media_type: str | None = None,
+    ) -> dict:
+        """
+        Send a message to the model with forced tool use and return the tool arguments.
+
+        Args:
+            system_prompt:    Task instructions for the model.
+            user_message:     The user-turn message accompanying the file or data.
+            tool_name:        Name of the tool the model must call.
+            tool_description: Human-readable description of the tool.
+            tool_parameters:  JSON Schema object describing the tool's parameters.
+            file_bytes:       Raw bytes of an image or PDF. None for text-only calls.
+            media_type:       MIME type (e.g. "image/jpeg", "application/pdf").
+
+        Returns:
+            A plain Python dict containing the tool call arguments.
+        """
+        ...

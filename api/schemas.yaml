@@ -1,0 +1,178 @@
+components:
+  schemas:
+
+    ValidationRuleCondition:
+      type: object
+      required: [source, field, operator, value]
+      properties:
+        source:
+          type: string
+          enum: [data, enrichments]
+        field:
+          type: string
+        operator:
+          type: string
+          enum: [lte, gte, lt, gt, eq, neq, in, not_in]
+        value: {}
+
+    ValidationRule:
+      type: object
+      required: [id, source, field, operator, value, message]
+      properties:
+        id:
+          type: string
+          description: Unique rule identifier
+        description:
+          type: string
+          nullable: true
+          description: Human-readable explanation of the rule
+        source:
+          type: string
+          enum: [data, enrichments]
+          description: Which dict to read the field from
+        field:
+          type: string
+          description: Field name to evaluate
+        operator:
+          type: string
+          enum: [lte, gte, lt, gt, eq, neq, in, not_in]
+        value: {}
+        condition:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ValidationRuleCondition"
+          description: Optional gate — rule only applies when this condition holds
+        message:
+          type: string
+          description: Message shown when the rule is violated
+
+    ValidationRules:
+      type: object
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationRule"
+
+    SchemaConfig:
+      type: object
+      required: [key, name, tool_schema]
+      properties:
+        key:
+          type: string
+          description: Unique slug (e.g. "receipt", "invoice", "contract")
+        name:
+          type: string
+          description: Human-readable name
+        description:
+          type: string
+          nullable: true
+        tool_schema:
+          type: object
+          additionalProperties: true
+          description: JSON Schema defining fields to extract from the document
+        enrichments_schema:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: JSON Schema defining fields that downstream agents will populate
+        system_prompt:
+          type: string
+          nullable: true
+          description: Custom system prompt — overrides the default extraction prompt
+        embed_fields:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Field paths to embed for semantic search
+        categorize_fields:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Enrichment fields the LLM fills (e.g. ["category"])
+        validation_rules:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ValidationRules"
+          description: Rules evaluated after extraction to determine compliance
+
+    ExtractionSchema:
+      allOf:
+        - $ref: "#/components/schemas/SchemaConfig"
+        - type: object
+          required: [id, created_at, updated_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+paths:
+
+  /schemas:
+    post:
+      summary: Register an extraction schema
+      operationId: create_schema
+      tags: [schemas]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SchemaConfig"
+      responses:
+        "201":
+          description: Schema created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionSchema"
+        "409":
+          description: Schema key already exists
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"
+
+    get:
+      summary: List all extraction schemas
+      operationId: list_schemas
+      tags: [schemas]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExtractionSchema"
+
+  /schemas/{key}:
+    get:
+      summary: Get schema by key
+      operationId: get_schema
+      tags: [schemas]
+      parameters:
+        - $ref: "common.yaml#/components/parameters/SchemaKey"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionSchema"
+        "404":
+          description: Schema not found
+          content:
+            application/json:
+              schema:
+                $ref: "common.yaml#/components/schemas/HTTPError"

@@ -1,0 +1,27 @@
+components:
+
+  parameters:
+    SchemaKey:
+      name: key
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique schema identifier (e.g. "receipt", "invoice")
+
+  schemas:
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    HTTPError:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string

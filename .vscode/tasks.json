@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Generate models from OpenAPI spec",
+      "type": "shell",
+      "command": "datamodel-codegen --input openapi.yaml --input-file-type openapi --output models/schemas.py --output-model-type pydantic_v2.BaseModel --use-standard-collections --use-union-operator --field-constraints",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start dev server",
+      "type": "shell",
+      "command": "source .venv/bin/activate && python main.py",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start database",
+      "type": "shell",
+      "command": "docker compose up -d",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run migrations",
+      "type": "shell",
+      "command": "alembic upgrade head",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
