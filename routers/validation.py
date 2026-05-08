@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agents.enrichment_agent import categorize_document
 from db.connection import get_db
 from db.repository import ExtractionRepository, SchemaRepository
 from models.schemas import RevalidateResult, ValidationRules
@@ -49,11 +50,15 @@ async def revalidate_document(
     schema = extraction.schema
     rules = (schema.validation_rules or {}).get("rules", [])
 
-    existing = extraction.enrichments or {}
-    categorization = {
-        k: v for k, v in existing.items()
-        if k not in ("is_compliant", "violations", "status")
-    }
+    # Re-run categorization (category + summary) then validation
+    try:
+        categorization = await asyncio.to_thread(categorize_document, extraction.data, schema)
+    except Exception:
+        existing = extraction.enrichments or {}
+        categorization = {
+            k: v for k, v in existing.items()
+            if k not in ("is_compliant", "violations", "status")
+        }
 
     validation_result = await asyncio.to_thread(validate_with_ai, rules, extraction.data, categorization)
     new_enrichments = {**categorization, **validation_result}
@@ -81,11 +86,14 @@ async def recompute_all_documents(
     updated = failed = 0
     for extraction in extractions:
         try:
-            existing = extraction.enrichments or {}
-            categorization = {
-                k: v for k, v in existing.items()
-                if k not in ("is_compliant", "violations", "status")
-            }
+            try:
+                categorization = await asyncio.to_thread(categorize_document, extraction.data, schema)
+            except Exception:
+                existing = extraction.enrichments or {}
+                categorization = {
+                    k: v for k, v in existing.items()
+                    if k not in ("is_compliant", "violations", "status")
+                }
             validation_result = await asyncio.to_thread(
                 validate_with_ai, rules, extraction.data, categorization
             )

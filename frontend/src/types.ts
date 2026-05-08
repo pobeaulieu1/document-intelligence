@@ -17,6 +17,7 @@ export interface ReceiptData {
 
 export interface Enrichments {
   category?: string;
+  summary?: string;
   is_compliant?: boolean;
   violations?: string[];
   status?: "accepted" | "needs_review";

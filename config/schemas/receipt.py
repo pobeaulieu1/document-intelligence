@@ -4,7 +4,7 @@ SCHEMA = SchemaConfig(
     key="receipt",
     name="Receipt",
     description="Extract structured data from retail and restaurant receipts",
-    categorize_fields=["category"],
+    categorize_fields=["category", "summary"],
     embed_fields=["merchant_name", "line_items"],
     tool_schema={
         "type": "object",
@@ -42,6 +42,10 @@ SCHEMA = SchemaConfig(
                 "type": "string",
                 "enum": ["meals", "transport", "accommodation", "equipment", "other"],
                 "description": "Expense category — classified by Agent 2",
+            },
+            "summary": {
+                "type": "string",
+                "description": "One sentence summarising the purpose of this expense (who, what, where, when).",
             },
             "is_compliant": {
                 "type": "boolean",

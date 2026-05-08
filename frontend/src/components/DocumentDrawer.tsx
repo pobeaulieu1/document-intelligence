@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   X, FileText, AlertTriangle, Trash2, Loader2,
-  ChevronDown, ChevronRight, CheckCircle2,
+  CheckCircle2, ChevronDown, Sparkles,
   Utensils, Car, BedDouble, Monitor, Package, RefreshCw,
   type LucideIcon,
 } from "lucide-react";
@@ -17,19 +17,19 @@ interface Props {
   onDocChange: (doc: Extraction) => void;
 }
 
-// ── Category config ───────────────────────────────────────────────────────
 const CATEGORY: Record<string, {
   label: string;
   Icon: LucideIcon;
   bg: string;
   text: string;
+  border: string;
   ring: string;
 }> = {
-  meals:         { label: "Meals",         Icon: Utensils,   bg: "bg-orange-50",  text: "text-orange-700", ring: "ring-orange-200" },
-  transport:     { label: "Transport",     Icon: Car,        bg: "bg-sky-50",     text: "text-sky-700",    ring: "ring-sky-200"    },
-  accommodation: { label: "Accommodation", Icon: BedDouble,  bg: "bg-violet-50",  text: "text-violet-700", ring: "ring-violet-200" },
-  equipment:     { label: "Equipment",     Icon: Monitor,    bg: "bg-slate-50",   text: "text-slate-700",  ring: "ring-slate-200"  },
-  other:         { label: "Other",         Icon: Package,    bg: "bg-gray-50",    text: "text-gray-600",   ring: "ring-gray-200"   },
+  meals:         { label: "Meals",         Icon: Utensils,  bg: "bg-orange-50",  text: "text-orange-700", border: "border-orange-100", ring: "ring-orange-200"  },
+  transport:     { label: "Transport",     Icon: Car,       bg: "bg-sky-50",     text: "text-sky-700",    border: "border-sky-100",    ring: "ring-sky-200"     },
+  accommodation: { label: "Accommodation", Icon: BedDouble, bg: "bg-violet-50",  text: "text-violet-700", border: "border-violet-100", ring: "ring-violet-200"  },
+  equipment:     { label: "Equipment",     Icon: Monitor,   bg: "bg-slate-50",   text: "text-slate-700",  border: "border-slate-100",  ring: "ring-slate-200"   },
+  other:         { label: "Other",         Icon: Package,   bg: "bg-gray-50",    text: "text-gray-600",   border: "border-gray-100",   ring: "ring-gray-200"    },
 };
 
 function fmtDate(iso: string) {
@@ -49,11 +49,12 @@ function humanize(key: string) {
 interface FilePreview { url: string; type: string }
 
 export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
-  const [preview, setPreview]         = useState<FilePreview | null>(null);
-  const [lineItemsOpen, setLineItemsOpen] = useState(false);
-  const queryClient = useQueryClient();
+  const [preview, setPreview]       = useState<FilePreview | null>(null);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const statusRef                   = useRef<HTMLDivElement>(null);
+  const queryClient                 = useQueryClient();
 
-  // ── File preview ────────────────────────────────────────────────────
+  // ── File preview ─────────────────────────────────────────────────────
   useEffect(() => {
     let url: string | null = null;
     fetch(fileUrl(doc.schema_key, doc.id))
@@ -71,14 +72,24 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
     return () => { if (url) URL.revokeObjectURL(url); };
   }, [doc.id, doc.schema_key]);
 
-  // ── Escape ──────────────────────────────────────────────────────────
+  // ── Escape ────────────────────────────────────────────────────────────
   useEffect(() => {
     const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
   }, [onClose]);
 
-  // ── Delete ──────────────────────────────────────────────────────────
+  // ── Close status dropdown on outside click ────────────────────────────
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (statusRef.current && !statusRef.current.contains(e.target as Node))
+        setStatusOpen(false);
+    };
+    if (statusOpen) document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, [statusOpen]);
+
+  // ── Mutations ─────────────────────────────────────────────────────────
   const deleteMutation = useMutation({
     mutationFn: () => deleteDocument(doc.schema_key, doc.id),
     onSuccess: () => {
@@ -87,7 +98,6 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
     },
   });
 
-  // ── Status toggle ────────────────────────────────────────────────────
   const statusMutation = useMutation({
     mutationFn: (status: "accepted" | "needs_review") =>
       updateDocumentStatus(doc.schema_key, doc.id, status),
@@ -97,7 +107,6 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
     },
   });
 
-  // ── Recompute ────────────────────────────────────────────────────────
   const recomputeMutation = useMutation({
     mutationFn: () => revalidateDocument(doc.schema_key, doc.id),
     onSuccess: (updated) => {
@@ -107,31 +116,27 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
   });
 
   const { data, enrichments } = doc;
-  const category = enrichments?.category;
-  const cat = category ? CATEGORY[category] ?? CATEGORY.other : null;
+  const category      = enrichments?.category;
+  const cat           = category ? CATEGORY[category] ?? CATEGORY.other : null;
   const currentStatus = enrichments?.status;
-  const isImage = preview?.type.startsWith("image/");
-  const isPdf   = preview?.type === "application/pdf";
-  const hasLineItems = (data.line_items?.length ?? 0) > 0;
+  const isImage       = preview?.type.startsWith("image/");
+  const isPdf         = preview?.type === "application/pdf";
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={onClose} />
 
-      {/* Drawer — 80vw, data left / doc right */}
+      {/* Drawer */}
       <aside
         className="relative z-10 flex bg-white shadow-2xl animate-slide-in overflow-hidden"
         style={{ width: "min(80vw, 1200px)" }}
       >
 
-        {/* ── LEFT — data panel ─────────────────────────────────────── */}
-        <div className="w-[380px] shrink-0 flex flex-col border-r border-gray-100 overflow-hidden">
+        {/* ── LEFT panel ───────────────────────────────────────────── */}
+        <div className="w-[460px] shrink-0 flex flex-col border-r border-gray-100 overflow-hidden">
 
-          {/* Header */}
+          {/* File header */}
           <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 shrink-0">
             <FileText size={14} className="text-gray-300 shrink-0" />
             <div className="flex-1 min-w-0">
@@ -148,148 +153,124 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
             >
               {deleteMutation.isPending
                 ? <Loader2 size={14} className="animate-spin" />
-                : <Trash2 size={14} />
-              }
+                : <Trash2 size={14} />}
             </button>
             <button onClick={onClose} className="text-gray-300 hover:text-gray-600 transition-colors">
               <X size={18} />
             </button>
           </div>
 
-          {/* AI hero — category + status + violations */}
-          <div className={`shrink-0 px-5 py-5 border-b border-gray-100 space-y-3 ${cat ? cat.bg : "bg-gray-50"}`}>
+          {/* ── Scrollable body ───────────────────────────────────── */}
+          <div className="flex-1 overflow-y-auto">
 
-            {/* Category badge (large) */}
-            {cat ? (
-              <div className={`inline-flex items-center gap-2.5 px-4 py-2 rounded-2xl ring-1 ${cat.bg} ${cat.text} ${cat.ring}`}>
-                <cat.Icon size={16} />
-                <span className="text-sm font-bold tracking-wide">{cat.label}</span>
+            {/* ── SUMMARY ───────────────────────────────────────────── */}
+            <div className="px-5 pt-5 pb-4 border-b border-gray-100">
+              <div className="flex items-center justify-between mb-3">
+                <p className={t.sectionTitle}>Summary</p>
+                {cat ? (
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ring-1 ${cat.bg} ${cat.text} ${cat.ring}`}>
+                    <cat.Icon size={11} />
+                    {cat.label}
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ring-1 bg-gray-100 text-gray-400 ring-gray-200">
+                    <Package size={11} />
+                    Other
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gray-100 text-gray-400 ring-1 ring-gray-200">
-                <Package size={15} />
-                <span className="text-sm font-semibold">Uncategorized</span>
+              <div className="rounded-2xl bg-gradient-to-br from-violet-50 via-indigo-50 to-blue-50 border border-indigo-100 p-4">
+                <div className="flex items-start gap-2.5">
+                  <Sparkles size={13} className="text-violet-400 mt-0.5 shrink-0" />
+                  <p className="text-sm font-medium text-gray-800 leading-relaxed">
+                    {enrichments?.summary ?? <span className="text-gray-400 italic font-normal">No summary yet — click Revalidate</span>}
+                  </p>
+                </div>
               </div>
-            )}
+            </div>
 
-            {/* Status + actions */}
-            <div className="flex items-center justify-between">
-              <StatusBadge status={currentStatus} size="md" />
-
-              <div className="flex items-center gap-1">
+            {/* ── COMPANY POLICY VALIDATION ─────────────────────────── */}
+            <div className="px-5 pt-5 pb-4 border-b border-gray-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className={t.sectionTitle}>Company Policy</p>
                 <button
                   onClick={() => recomputeMutation.mutate()}
                   disabled={recomputeMutation.isPending}
-                  className="text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors disabled:opacity-40"
                   title="Re-run AI validation"
                 >
                   {recomputeMutation.isPending
-                    ? <Loader2 size={12} className="animate-spin" />
-                    : <RefreshCw size={12} />
-                  }
+                    ? <Loader2 size={11} className="animate-spin" />
+                    : <RefreshCw size={11} />}
+                  Revalidate
                 </button>
-
-                {currentStatus === "accepted" ? (
-                  <button
-                    onClick={() => statusMutation.mutate("needs_review")}
-                    disabled={statusMutation.isPending}
-                    className="text-xs font-semibold text-amber-600 hover:text-amber-700 hover:bg-amber-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
-                  >
-                    {statusMutation.isPending ? <Loader2 size={12} className="animate-spin inline" /> : "Flag for review"}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => statusMutation.mutate("accepted")}
-                    disabled={statusMutation.isPending}
-                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
-                  >
-                    {statusMutation.isPending ? <Loader2 size={12} className="animate-spin inline" /> : "Mark accepted"}
-                  </button>
-                )}
               </div>
-            </div>
 
-            {/* Violations */}
-            {enrichments?.violations && enrichments.violations.length > 0 && (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
-                <div className="flex items-center gap-1.5 text-amber-700 text-xs font-bold mb-1.5">
-                  <AlertTriangle size={12} />
-                  Policy Violations
-                </div>
-                <ul className="space-y-1">
-                  {enrichments.violations.map((v, i) => (
-                    <li key={i} className="text-xs text-amber-700 leading-snug">• {v}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Compliant confirmation */}
-            {enrichments?.is_compliant && (!enrichments.violations || enrichments.violations.length === 0) && (
-              <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-semibold">
-                <CheckCircle2 size={13} />
-                All policy rules satisfied
-              </div>
-            )}
-          </div>
-
-          {/* Scrollable fields */}
-          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
-
-            {/* Key numbers */}
-            <div className="space-y-4">
-              <div>
-                <p className={t.fieldLabel}>Merchant</p>
-                <p className="text-xl font-bold text-gray-900 mt-0.5">{data.merchant_name ?? "—"}</p>
-              </div>
-              <div>
-                <p className={t.fieldLabel}>Total</p>
-                <p className="text-2xl font-bold text-gray-900 tabular-nums mt-0.5">
-                  {fmtCurrency(data.total_amount, data.currency)}
-                </p>
-              </div>
-            </div>
-
-            {/* Line items (collapsible) */}
-            {hasLineItems && (
-              <div>
+              {/* Status dropdown */}
+              <div className="relative" ref={statusRef}>
                 <button
-                  onClick={() => setLineItemsOpen((o) => !o)}
-                  className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-widest hover:text-gray-600 transition-colors group w-full"
+                  onClick={() => setStatusOpen((o) => !o)}
+                  disabled={statusMutation.isPending}
+                  className="flex items-center gap-1.5 disabled:opacity-40"
                 >
-                  {lineItemsOpen
-                    ? <ChevronDown size={12} />
-                    : <ChevronRight size={12} />
-                  }
-                  Line Items ({data.line_items.length})
+                  <StatusBadge status={currentStatus} size="md" />
+                  <ChevronDown size={12} className="text-gray-400" />
                 </button>
-                {lineItemsOpen && (
-                  <div className="mt-3 space-y-2 pl-1">
-                    {data.line_items.map((item, i) => (
-                      <div key={i} className="flex items-baseline justify-between gap-3 text-sm">
-                        <span className="text-gray-600 truncate">
-                          {item.quantity && item.quantity !== 1 ? `${item.quantity}× ` : ""}
-                          {item.description}
-                        </span>
-                        <span className="font-semibold text-gray-900 tabular-nums shrink-0">
-                          {fmtCurrency(item.total, data.currency)}
-                        </span>
-                      </div>
+                {statusOpen && (
+                  <div className="absolute top-full left-0 mt-1.5 bg-white rounded-xl shadow-lg border border-gray-100 py-1.5 z-20 min-w-[170px]">
+                    {(["accepted", "needs_review"] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => { statusMutation.mutate(s); setStatusOpen(false); }}
+                        className={`w-full flex items-center px-3 py-2 hover:bg-gray-50 transition-colors ${currentStatus === s ? "opacity-40 pointer-events-none" : ""}`}
+                      >
+                        <StatusBadge status={s} size="sm" />
+                      </button>
                     ))}
                   </div>
                 )}
               </div>
-            )}
 
-            {/* Secondary details */}
-            <div className="space-y-3 pt-2 border-t border-gray-100">
-              <Field label="Date"    value={data.date ?? "—"} />
-              <Field label="Payment" value={data.payment_method ? humanize(data.payment_method) : "—"} />
+              {/* Violations */}
+              {enrichments?.violations && enrichments.violations.length > 0 && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+                  <div className="flex items-center gap-1.5 text-amber-700 text-xs font-bold mb-1.5">
+                    <AlertTriangle size={12} />
+                    Violations
+                  </div>
+                  <ul className="space-y-1">
+                    {enrichments.violations.map((v, i) => (
+                      <li key={i} className="text-xs text-amber-700 leading-snug">• {v}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Compliant */}
+              {enrichments?.is_compliant && (!enrichments.violations || enrichments.violations.length === 0) && (
+                <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-semibold">
+                  <CheckCircle2 size={13} />
+                  All policy rules satisfied
+                </div>
+              )}
             </div>
+
+            {/* ── DETAILS ───────────────────────────────────────────── */}
+            <div className="px-5 pt-5 pb-4">
+              <p className={`${t.sectionTitle} mb-1`}>Details</p>
+              <div className="divide-y divide-gray-50">
+                <Field label="Merchant" value={data.merchant_name ?? "—"} />
+                <Field label="Total"    value={fmtCurrency(data.total_amount, data.currency)} />
+                <Field label="Date"     value={data.date ?? "—"} />
+                <Field label="Payment"  value={data.payment_method ? humanize(data.payment_method) : "—"} />
+                <Field label="Uploaded" value={fmtDate(doc.created_at)} />
+              </div>
+            </div>
+
           </div>
         </div>
 
-        {/* ── RIGHT — document preview ───────────────────────────────── */}
+        {/* ── RIGHT — document preview ──────────────────────────────── */}
         <div className="flex-1 bg-gray-100 overflow-hidden flex items-center justify-center">
           {isImage && preview && (
             <img
@@ -315,7 +296,7 @@ export function DocumentDrawer({ doc, onClose, onDocChange }: Props) {
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-4">
+    <div className="flex items-baseline justify-between gap-4 py-3.5">
       <dt className={t.fieldLabel}>{label}</dt>
       <dd className={`${t.fieldValue} text-right`}>{value}</dd>
     </div>
