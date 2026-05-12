@@ -42,9 +42,10 @@ interface FilePreview { url: string; type: string }
 
 interface Props {
   onOpenChat: () => void;
+  isRecomputing?: boolean;
 }
 
-export function ReceiptPage({ onOpenChat }: Props) {
+export function ReceiptPage({ onOpenChat, isRecomputing = false }: Props) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -98,7 +99,7 @@ export function ReceiptPage({ onOpenChat }: Props) {
     },
   });
 
-  const loading = recomputeMutation.isPending;
+  const loading = recomputeMutation.isPending || isRecomputing;
 
   if (docLoading) {
     return (

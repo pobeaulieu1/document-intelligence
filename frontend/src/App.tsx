@@ -17,19 +17,30 @@ export type ChatState = "closed" | "open" | "minimized";
 
 export default function App() {
   const [chatState, setChatState] = useState<ChatState>("closed");
+  const [isRecomputing, setIsRecomputing] = useState(false);
 
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<DocumentsPage onOpenChat={() => setChatState("open")} />} />
-          <Route path="/receipts/:id" element={<ReceiptPage onOpenChat={() => setChatState("open")} />} />
+          <Route
+            path="/"
+            element={
+              <DocumentsPage
+                onOpenChat={() => setChatState("open")}
+                isRecomputing={isRecomputing}
+              />
+            }
+          />
+          <Route path="/receipts/:id" element={<ReceiptPage onOpenChat={() => setChatState("open")} isRecomputing={isRecomputing} />} />
         </Routes>
 
         <ChatPanel
           schemaKey={SCHEMA_KEY}
           state={chatState}
           onStateChange={setChatState}
+          onRecomputeStart={() => setIsRecomputing(true)}
+          onRecomputeEnd={() => setIsRecomputing(false)}
         />
       </BrowserRouter>
     </QueryClientProvider>

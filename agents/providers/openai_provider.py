@@ -62,3 +62,56 @@ class OpenAIProvider:
             ],
         )
         return response.choices[0].message.content
+
+    def call_and_maybe_use_tool(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> tuple[str | None, str | None, dict | None]:
+        openai_tools = [{
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
+            },
+        } for t in tools]
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=full_messages,
+            tools=openai_tools,
+            tool_choice="auto",
+        )
+        msg = response.choices[0].message
+        if msg.tool_calls:
+            call = msg.tool_calls[0]
+            return None, call.function.name, json.loads(call.function.arguments)
+        return msg.content, None, None
+
+    def continue_after_tool(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tool_name: str,
+        tool_input: dict,
+        tool_result: str,
+    ) -> str:
+        full_messages = (
+            [{"role": "system", "content": system_prompt}]
+            + list(messages)
+            + [
+                {"role": "assistant", "content": None, "tool_calls": [{
+                    "id": "call_0",
+                    "type": "function",
+                    "function": {"name": tool_name, "arguments": json.dumps(tool_input)},
+                }]},
+                {"role": "tool", "tool_call_id": "call_0", "content": tool_result},
+            ]
+        )
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=full_messages,
+        )
+        return response.choices[0].message.content

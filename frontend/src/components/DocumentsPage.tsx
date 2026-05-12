@@ -17,15 +17,16 @@ function fmtCurrency(n: number) {
 
 interface Props {
   onOpenChat: () => void;
+  isRecomputing: boolean;
 }
 
-export function DocumentsPage({ onOpenChat }: Props) {
+export function DocumentsPage({ onOpenChat, isRecomputing }: Props) {
   const navigate = useNavigate();
   const [showUpload, setShowUpload]     = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [newId, setNewId]               = useState<string | undefined>();
 
-  const { data: docs = [], isLoading, isError, refetch } = useQuery({
+  const { data: docs = [], isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["documents", SCHEMA_KEY],
     queryFn: () => listDocuments(SCHEMA_KEY),
   });
@@ -155,6 +156,7 @@ export function DocumentsPage({ onOpenChat }: Props) {
               documents={docs}
               newId={newId}
               onRowClick={(doc) => navigate(`/receipts/${doc.id}`)}
+              isRefreshing={isRecomputing || (isFetching && !isLoading)}
             />
           )}
         </div>

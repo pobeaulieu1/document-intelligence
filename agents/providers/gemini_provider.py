@@ -60,6 +60,29 @@ class GeminiProvider:
 
         return dict(fc.args)
 
+    def call_and_maybe_use_tool(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> tuple[str | None, str | None, dict | None]:
+        user_message = messages[-1]["content"] if messages else ""
+        return self.call_plain(system_prompt, user_message), None, None
+
+    def continue_after_tool(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tool_name: str,
+        tool_input: dict,
+        tool_result: str,
+    ) -> str:
+        user_message = messages[-1]["content"] if messages else ""
+        return self.call_plain(
+            system_prompt,
+            f"{user_message}\n\nThe {tool_name} action completed: {tool_result}",
+        )
+
     def call_plain(self, system_prompt: str, user_message: str) -> str:
         response = self._client.models.generate_content(
             model=self._model,

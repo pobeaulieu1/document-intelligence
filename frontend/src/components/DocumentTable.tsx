@@ -6,6 +6,7 @@ interface Props {
   documents: Extraction[];
   newId?: string;
   onRowClick: (doc: Extraction) => void;
+  isRefreshing?: boolean;
 }
 
 function relativeTime(iso: string) {
@@ -38,7 +39,11 @@ function fmtPayment(v?: string | null) {
   return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function DocumentTable({ documents, newId, onRowClick }: Props) {
+function SkeletonCell({ w }: { w: string }) {
+  return <div className={`h-4 ${w} rounded bg-gray-100 animate-pulse`} />;
+}
+
+export function DocumentTable({ documents, newId, onRowClick, isRefreshing }: Props) {
   if (documents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-400 gap-2">
@@ -78,34 +83,40 @@ export function DocumentTable({ documents, newId, onRowClick }: Props) {
         {documents.map((doc) => (
           <tr
             key={doc.id}
-            onClick={() => onRowClick(doc)}
+            onClick={() => !isRefreshing && onRowClick(doc)}
             className={`
-              cursor-pointer border-b border-gray-50 last:border-0
-              hover:bg-gray-50/70 transition-colors group
+              border-b border-gray-50 last:border-0 transition-colors group
+              ${isRefreshing ? "cursor-default" : "cursor-pointer hover:bg-gray-50/70"}
               ${doc.id === newId ? "animate-new-row" : ""}
             `}
           >
-            <td className={`${t.tableCell} font-semibold text-gray-900 max-w-[200px]`}>
-              <span className="truncate block">{doc.data.merchant_name}</span>
-            </td>
-            <td className={t.tableCell}>
-              <StatusBadge status={doc.enrichments?.status} />
-            </td>
-            <td className={`${t.tableCell} capitalize text-gray-500`}>
-              {doc.enrichments?.category ?? "—"}
-            </td>
-            <td className={`${t.tableCell} font-semibold text-gray-900 tabular-nums`}>
-              {fmtAmount(doc.data.total_amount, doc.data.currency)}
-            </td>
-            <td className={`${t.tableCell} text-gray-500`}>
-              {fmtDate(doc.data.date)}
-            </td>
-            <td className={`${t.tableCell} text-gray-500`}>
-              {fmtPayment(doc.data.payment_method)}
-            </td>
-            <td className={`${t.tableCell} text-gray-400 text-xs`}>
-              {relativeTime(doc.created_at)}
-            </td>
+            <>
+              <td className={`${t.tableCell} font-semibold text-gray-900 max-w-[200px]`}>
+                <span className="truncate block">{doc.data.merchant_name}</span>
+              </td>
+              <td className={t.tableCell}>
+                {isRefreshing
+                  ? <SkeletonCell w="w-20" />
+                  : <StatusBadge status={doc.enrichments?.status} />}
+              </td>
+              <td className={`${t.tableCell} capitalize text-gray-500`}>
+                {isRefreshing
+                  ? <SkeletonCell w="w-16" />
+                  : (doc.enrichments?.category ?? "—")}
+              </td>
+              <td className={`${t.tableCell} font-semibold text-gray-900 tabular-nums`}>
+                {fmtAmount(doc.data.total_amount, doc.data.currency)}
+              </td>
+              <td className={`${t.tableCell} text-gray-500`}>
+                {fmtDate(doc.data.date)}
+              </td>
+              <td className={`${t.tableCell} text-gray-500`}>
+                {fmtPayment(doc.data.payment_method)}
+              </td>
+              <td className={`${t.tableCell} text-gray-400 text-xs`}>
+                {relativeTime(doc.created_at)}
+              </td>
+            </>
           </tr>
         ))}
       </tbody>

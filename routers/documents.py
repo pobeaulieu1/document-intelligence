@@ -24,13 +24,54 @@ class SearchRequest(BaseModel):
     q: str
 
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str
+    history: list[ChatMessage] = []
 
 
 class ChatResponse(BaseModel):
     answer: str
     sources: list[ExtractionResult]
+    policy_updated: bool = False
+
+
+_UPDATE_POLICY_TOOL = {
+    "name": "update_policy",
+    "description": (
+        "Update the company expense policy rules. "
+        "Call this when the user asks to add, change, or remove a policy rule. "
+        "Always include ALL rules (both modified and unchanged ones) in the rules array."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "rules": {
+                "type": "array",
+                "description": "The complete list of policy rules after the update.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Unique rule identifier in snake_case, e.g. meal_limit",
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Full text of the rule as it should be enforced.",
+                        },
+                    },
+                    "required": ["id", "text"],
+                },
+            }
+        },
+        "required": ["rules"],
+    },
+}
 
 router = APIRouter(prefix="/schemas", tags=["documents"])
 
@@ -171,20 +212,52 @@ async def chat_documents(
         default=str,
     )
 
-    provider = get_provider("enrichment")
-    answer = await asyncio.to_thread(
-        provider.call_plain,
-        (
-            "You are an assistant that answers questions about expense receipts. "
-            "Answer concisely and accurately based only on the receipt data provided. "
-            "When you reference a specific receipt, cite it inline as a markdown link using its id field: "
-            "[Merchant Name](/receipts/ID). "
-            "If the answer cannot be determined from the data, say so."
-        ),
-        f"Receipts:\n{context}\n\nQuestion: {body.message}",
+    rules = (schema.validation_rules or {}).get("rules", [])
+    policy_text = (
+        "\n".join(f"- {r['id']}: {r['text']}" for r in rules)
+        if rules else "No policy rules defined."
     )
 
-    return ChatResponse(answer=answer, sources=[_orm_to_result(d) for d in source_docs])
+    system_prompt = (
+        "You are an assistant that answers questions about expense receipts and company expense policy. "
+        "Answer concisely and accurately based on the receipt data and policy rules provided. "
+        "When you reference a specific receipt, cite it inline as a markdown link using its id field: "
+        "[Merchant Name](/receipts/ID). "
+        "You have access to an update_policy tool — use it when the user asks to change, add, or remove a policy rule. "
+        "If the answer cannot be determined from the data, say so.\n\n"
+        f"Company Expense Policy:\n{policy_text}"
+    )
+    messages = [{"role": m.role, "content": m.content} for m in body.history]
+    messages.append({"role": "user", "content": f"Receipts:\n{context}\n\nQuestion: {body.message}"})
+
+    provider = get_provider("enrichment")
+    text, tool_name, tool_input = await asyncio.to_thread(
+        provider.call_and_maybe_use_tool,
+        system_prompt,
+        messages,
+        [_UPDATE_POLICY_TOOL],
+    )
+
+    policy_updated = False
+    if tool_name == "update_policy" and tool_input:
+        await SchemaRepository(db).update_validation_rules(key, tool_input["rules"])
+        policy_updated = True
+        answer = await asyncio.to_thread(
+            provider.continue_after_tool,
+            system_prompt,
+            messages,
+            tool_name,
+            tool_input,
+            "Policy updated successfully.",
+        )
+    else:
+        answer = text or ""
+
+    return ChatResponse(
+        answer=answer,
+        sources=[_orm_to_result(d) for d in source_docs],
+        policy_updated=policy_updated,
+    )
 
 
 @router.delete("/{key}/documents/{doc_id}", status_code=204)

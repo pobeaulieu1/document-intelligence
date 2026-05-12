@@ -70,3 +70,47 @@ class AnthropicProvider:
             messages=[{"role": "user", "content": user_message}],
         )
         return response.content[0].text
+
+    def call_and_maybe_use_tool(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> tuple[str | None, str | None, dict | None]:
+        response = self._client.messages.create(
+            model=self._model,
+            max_tokens=1024,
+            system=system_prompt,
+            tools=tools,
+            messages=messages,
+        )
+        if response.stop_reason == "tool_use":
+            block = next(b for b in response.content if b.type == "tool_use")
+            return None, block.name, dict(block.input)
+        return response.content[0].text, None, None
+
+    def continue_after_tool(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tool_name: str,
+        tool_input: dict,
+        tool_result: str,
+    ) -> str:
+        import uuid
+        tool_use_id = f"toolu_{uuid.uuid4().hex[:16]}"
+        extended = list(messages) + [
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": tool_use_id, "name": tool_name, "input": tool_input}
+            ]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": tool_use_id, "content": tool_result}
+            ]},
+        ]
+        response = self._client.messages.create(
+            model=self._model,
+            max_tokens=1024,
+            system=system_prompt,
+            messages=extended,
+        )
+        return response.content[0].text

@@ -40,3 +40,28 @@ class LLMProvider(Protocol):
     def call_plain(self, system_prompt: str, user_message: str) -> str:
         """Send a plain text prompt and return the model's text response."""
         ...
+
+    def call_and_maybe_use_tool(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> tuple[str | None, str | None, dict | None]:
+        """
+        Send a conversation with optional tools available.
+        messages: list of {"role": "user"|"assistant", "content": str}
+        Returns (text, None, None) if the model responded with text.
+        Returns (None, tool_name, tool_input) if the model called a tool.
+        """
+        ...
+
+    def continue_after_tool(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tool_name: str,
+        tool_input: dict,
+        tool_result: str,
+    ) -> str:
+        """Send a tool result back to the model and return its follow-up text."""
+        ...

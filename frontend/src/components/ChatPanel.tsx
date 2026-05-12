@@ -1,27 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, Send, MessageSquare, Loader2, Minus } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { X, Send, MessageSquare, Loader2, Minus, RefreshCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { chatWithDocuments } from "../api";
+import { chatWithDocuments, recomputeAll } from "../api";
 import type { ChatState } from "../App";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  policy_updated?: boolean;
 }
 
 interface Props {
   schemaKey: string;
   state: ChatState;
   onStateChange: (s: ChatState) => void;
+  onRecomputeStart: () => void;
+  onRecomputeEnd: () => void;
 }
 
-export function ChatPanel({ schemaKey, state, onStateChange }: Props) {
+export function ChatPanel({ schemaKey, state, onStateChange, onRecomputeStart, onRecomputeEnd }: Props) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [recomputingMsgIdx, setRecomputingMsgIdx] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,11 +40,12 @@ export function ChatPanel({ schemaKey, state, onStateChange }: Props) {
     const text = input.trim();
     if (!text || isLoading) return;
     setInput("");
+    const history = messages.map((m) => ({ role: m.role, content: m.content }));
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setIsLoading(true);
     try {
-      const { answer } = await chatWithDocuments(schemaKey, text);
-      setMessages((prev) => [...prev, { role: "assistant", content: answer }]);
+      const { answer, policy_updated } = await chatWithDocuments(schemaKey, text, history);
+      setMessages((prev) => [...prev, { role: "assistant", content: answer, policy_updated }]);
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -46,6 +53,27 @@ export function ChatPanel({ schemaKey, state, onStateChange }: Props) {
       ]);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleRecompute(msgIdx: number) {
+    setRecomputingMsgIdx(msgIdx);
+    onRecomputeStart();
+    try {
+      const { updated, failed, total } = await recomputeAll(schemaKey);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["documents", schemaKey] }),
+        queryClient.invalidateQueries({ queryKey: ["document"] }),
+      ]);
+      const summary = failed > 0
+        ? `Recomputed ${updated}/${total} receipts (${failed} failed).`
+        : `All ${total} receipt${total !== 1 ? "s" : ""} revalidated against the new policy.`;
+      setMessages((prev) => [...prev, { role: "assistant", content: summary }]);
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Recompute failed. Please try again." }]);
+    } finally {
+      setRecomputingMsgIdx(null);
+      onRecomputeEnd();
     }
   }
 
@@ -182,6 +210,24 @@ export function ChatPanel({ schemaKey, state, onStateChange }: Props) {
                 </ReactMarkdown>
               ) : (
                 m.content
+              )}
+              {m.policy_updated && (
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  {recomputingMsgIdx === i ? (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                      <Loader2 size={12} className="animate-spin" />
+                      Recomputing…
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleRecompute(i)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline"
+                    >
+                      <RefreshCw size={11} />
+                      Recompute all receipts for compliance
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
