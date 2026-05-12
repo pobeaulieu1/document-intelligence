@@ -10,6 +10,10 @@ CONFIG = LLMConfig(
             provider="anthropic",
             model="claude-sonnet-4-6",
         ),
+        "validation": AgentConfig(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+        ),
     },
     embeddings=EmbeddingConfig(
         provider="openai",

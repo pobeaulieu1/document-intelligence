@@ -1,50 +1,36 @@
 import logging
 
+from langchain_openai import OpenAIEmbeddings
+
 from config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
-    def __init__(self, provider: str, model: str, api_key: str) -> None:
+    def __init__(self, provider: str, model: str, api_key: str, dimensions: int = 1536) -> None:
         self._provider = provider
-        self._model = model
-        self._api_key = api_key
+        # LangChain's OpenAIEmbeddings wraps the OpenAI embeddings API.
+        # embed_documents() returns list[list[float]] — one vector per input text.
+        if provider == "openai":
+            self._embedder = OpenAIEmbeddings(model=model, api_key=api_key, dimensions=dimensions)
+        elif provider == "google":
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            self._embedder = GoogleGenerativeAIEmbeddings(model=model, google_api_key=api_key)
+        else:
+            self._embedder = None
 
     def embed_texts(self, texts: list[str]) -> list[list[float]] | None:
-        """Embed a list of texts. Returns None on failure so callers can store without vectors."""
-        if not texts or self._provider == "none":
+        if not texts or self._provider == "none" or self._embedder is None:
             return None
         try:
-            if self._provider == "google":
-                return self._embed_with_google(texts)
-            if self._provider == "openai":
-                return self._embed_with_openai(texts)
-            raise ValueError(f"Unknown embedding provider: {self._provider}")
+            return self._embedder.embed_documents(texts)
         except Exception as exc:
             logger.warning("Embedding failed, storing without vectors: %s", exc)
             return None
 
-    def _embed_with_google(self, texts: list[str]) -> list[list[float]]:
-        from google import genai
-
-        client = genai.Client(api_key=self._api_key)
-        response = client.models.embed_content(model=self._model, contents=texts)
-        return [e.values for e in response.embeddings]
-
-    def _embed_with_openai(self, texts: list[str]) -> list[list[float]]:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=self._api_key)
-        response = client.embeddings.create(model=self._model, input=texts)
-        return [item.embedding for item in response.data]
-
 
 def extract_embed_pairs(data: dict, embed_fields: list[str]) -> list[tuple[str, str]]:
-    """
-    Traverse data and return (field_path, text_value) pairs for the specified fields.
-    Handles simple fields and arrays of strings or objects.
-    """
     pairs: list[tuple[str, str]] = []
     for field in embed_fields:
         value = data.get(field)
@@ -71,4 +57,5 @@ def get_embedding_service() -> EmbeddingService:
         provider=cfg["provider"],
         model=cfg["model"],
         api_key=api_key_map.get(cfg["provider"], ""),
+        dimensions=cfg.get("dimensions", 1536),
     )

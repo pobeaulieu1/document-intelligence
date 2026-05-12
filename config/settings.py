@@ -14,24 +14,11 @@ DATABASE_URL: str = os.getenv(
 )
 
 
-def _get_config():
-    from config.llm_config import CONFIG
-    return CONFIG
-
-
-def get_agent_config(agent_name: str) -> dict:
-    """Return {"provider": "...", "model": "..."} for the given agent."""
-    agents = _get_config().agents
-    if agent_name not in agents:
-        raise KeyError(f"No config for agent '{agent_name}' in llm_config.py")
-    return agents[agent_name].model_dump()
-
-
 def get_agents() -> dict[str, dict]:
-    """Return the full agent → config mapping."""
-    return {name: cfg.model_dump() for name, cfg in _get_config().agents.items()}
+    from config.llm_config import CONFIG
+    return {name: cfg.model_dump() for name, cfg in CONFIG.agents.items()}
 
 
 def get_embedding_config() -> dict:
-    """Return {"provider": "...", "model": "...", "dimensions": N}."""
-    return _get_config().embeddings.model_dump()
+    from config.llm_config import CONFIG
+    return CONFIG.embeddings.model_dump()

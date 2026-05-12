@@ -1,19 +1,12 @@
-"""
-Agent 2 — Enrichment.
-
-Takes the structured data produced by Agent 1 and uses the LLM to populate the
-fields in enrichments_schema that require semantic understanding (e.g. expense
-category). Fields that can be computed deterministically (policy compliance,
-status) are handled by the PolicyEngine, not here.
-
-Which fields the LLM fills is controlled by the `enrichment_fields` list on the
-ExtractionSchemaORM. Only those fields are included in the tool call.
-"""
-
+import base64
 import json
 
-from agents.providers import get_provider
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from agents.llm import get_chat_model
 from db.models import ExtractionSchemaORM
+
+_model = get_chat_model("enrichment")
 
 _SYSTEM_PROMPT = (
     "You are an expert expense analyst. You are given structured data extracted from a receipt "
@@ -32,12 +25,6 @@ def categorize_document(
     file_bytes: bytes | None = None,
     media_type: str | None = None,
 ) -> dict:
-    """
-    Use the LLM to populate the categorization fields defined on the schema.
-
-    Returns a partial enrichments dict (only the fields listed in enrichment_fields).
-    Returns {} if the schema has no enrichment_fields or no enrichments_schema.
-    """
     enrichment_fields: list[str] = schema.enrichment_fields or []
     if not enrichment_fields or not schema.enrichments_schema:
         return {}
@@ -47,28 +34,35 @@ def categorize_document(
     if not cat_props:
         return {}
 
-    tool_params = {
-        "type": "object",
-        "properties": cat_props,
-        "required": enrichment_fields,
-    }
-
-    provider = get_provider("enrichment")
+    tool_name = f"categorize_{schema.key}"
+    tool_params = {"type": "object", "properties": cat_props, "required": enrichment_fields}
     data_text = json.dumps(extracted_data, indent=2, default=str)
 
-    return provider.call_with_tool(
-        system_prompt=_SYSTEM_PROMPT,
-        user_message=(
-            f"Classify this {schema.name} expense.\n\n"
-            f"Structured data:\n{data_text}\n\n"
-            f"{'The original receipt is attached — use it to fill embed_text with everything visible.' if file_bytes else ''}"
-        ),
-        tool_name=f"categorize_{schema.key}",
-        tool_description=(
-            f"Classify the semantic fields of a {schema.name} document. "
-            f"Fields to fill: {', '.join(enrichment_fields)}."
-        ),
-        tool_parameters=tool_params,
-        file_bytes=file_bytes,
-        media_type=media_type,
+    content: list = []
+    if file_bytes is not None:
+        b64 = base64.standard_b64encode(file_bytes).decode()
+        if media_type == "application/pdf":
+            content.append({
+                "type": "document",
+                "source": {"type": "base64", "media_type": "application/pdf", "data": b64},
+            })
+        else:
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": b64},
+            })
+    content.append({"type": "text", "text": (
+        f"Classify this {schema.name} expense.\n\n"
+        f"Structured data:\n{data_text}\n\n"
+        f"{'The original receipt is attached — use it to fill embed_text with everything visible.' if file_bytes else ''}"
+    )})
+
+    chain = _model.bind_tools(
+        [{"name": tool_name, "description": f"Classify fields: {', '.join(enrichment_fields)}.", "input_schema": tool_params}],
+        tool_choice={"type": "tool", "name": tool_name},
     )
+    response = chain.invoke([
+        SystemMessage(content=_SYSTEM_PROMPT),
+        HumanMessage(content=content),
+    ])
+    return response.tool_calls[0]["args"]

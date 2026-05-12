@@ -1,4 +1,8 @@
-anthropic>=0.40.0
+# LangChain — unified interface for LLMs, tools, embeddings, and chains
+langchain-anthropic>=0.3.0
+langchain-openai>=0.3.0
+langchain-google-genai>=2.0.0
+
 pyyaml>=6.0.0
 datamodel-code-generator[ruff]>=0.25.0
 fastapi>=0.115.0
@@ -7,8 +11,6 @@ python-multipart>=0.0.12
 pillow>=11.0.0
 pydantic>=2.10.0
 python-dotenv>=1.0.0
-google-genai>=1.0.0
-openai>=1.0.0
 
 # Database
 sqlalchemy[asyncio]>=2.0.0

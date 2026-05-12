@@ -1,9 +1,17 @@
-from agents.providers import get_provider
+import base64
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from agents.llm import get_chat_model
 from db.models import ExtractionSchemaORM
 
-_DEFAULT_SYSTEM_PROMPT = """You are an expert document parser. Extract structured data from documents with high accuracy.
-Be precise with numerical values. Use null for fields that are not visible or unclear.
-Always call the extraction tool with the extracted information."""
+_model = get_chat_model("extraction")
+
+_DEFAULT_SYSTEM_PROMPT = (
+    "You are an expert document parser. Extract structured data from documents with high accuracy. "
+    "Be precise with numerical values. Use null for fields that are not visible or unclear. "
+    "Always call the extraction tool with the extracted information."
+)
 
 
 def _detect_media_type(file_bytes: bytes) -> str:
@@ -21,17 +29,29 @@ def _detect_media_type(file_bytes: bytes) -> str:
 
 
 def extract_document(file_bytes: bytes, schema: ExtractionSchemaORM) -> dict:
-    """
-    Extract structured data from a document using the tool schema defined on the DB schema.
-    Fully generic — the tool definition comes from the database, not hardcoded here.
-    """
-    provider = get_provider("extraction")
-    return provider.call_with_tool(
-        system_prompt=schema.system_prompt or _DEFAULT_SYSTEM_PROMPT,
-        user_message=f"Extract all {schema.name} data from this document.",
-        tool_name=f"extract_{schema.key}",
-        tool_description=schema.description or f"Extract structured {schema.name} data from a document.",
-        tool_parameters=schema.tool_schema,
-        file_bytes=file_bytes,
-        media_type=_detect_media_type(file_bytes),
+    media_type = _detect_media_type(file_bytes)
+    b64 = base64.standard_b64encode(file_bytes).decode()
+
+    content: list = []
+    if media_type == "application/pdf":
+        content.append({
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": b64},
+        })
+    else:
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": b64},
+        })
+    content.append({"type": "text", "text": f"Extract all {schema.name} data from this document."})
+
+    tool_name = f"extract_{schema.key}"
+    chain = _model.bind_tools(
+        [{"name": tool_name, "description": schema.description or f"Extract {schema.name} data.", "input_schema": schema.tool_schema}],
+        tool_choice={"type": "tool", "name": tool_name},
     )
+    response = chain.invoke([
+        SystemMessage(content=schema.system_prompt or _DEFAULT_SYSTEM_PROMPT),
+        HumanMessage(content=content),
+    ])
+    return response.tool_calls[0]["args"]

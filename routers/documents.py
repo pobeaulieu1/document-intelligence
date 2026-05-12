@@ -5,6 +5,9 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.tools import tool
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,38 +43,21 @@ class ChatResponse(BaseModel):
     policy_updated: bool = False
 
 
-_UPDATE_POLICY_TOOL = {
-    "name": "update_policy",
-    "description": (
-        "Update the company expense policy rules. "
-        "Call this when the user asks to add, change, or remove a policy rule. "
-        "Always include ALL rules (both modified and unchanged ones) in the rules array."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "rules": {
-                "type": "array",
-                "description": "The complete list of policy rules after the update.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "Unique rule identifier in snake_case, e.g. meal_limit",
-                        },
-                        "text": {
-                            "type": "string",
-                            "description": "Full text of the rule as it should be enforced.",
-                        },
-                    },
-                    "required": ["id", "text"],
-                },
-            }
-        },
-        "required": ["rules"],
-    },
-}
+class _PolicyRule(BaseModel):
+    id: str
+    text: str
+
+
+class _UpdatePolicyInput(BaseModel):
+    rules: list[_PolicyRule]
+
+
+# @tool turns a function into a LangChain tool the model can call.
+# The docstring becomes the tool description; the Pydantic model defines the input schema.
+@tool(args_schema=_UpdatePolicyInput)
+def update_policy(rules: list[_PolicyRule]) -> str:  # noqa: ARG001
+    """Update the company expense policy rules. Call this when the user asks to change, add, or remove a rule. Always include ALL existing rules plus any modifications."""
+    return "Policy updated successfully."
 
 router = APIRouter(prefix="/schemas", tags=["documents"])
 
@@ -180,8 +166,6 @@ async def chat_documents(
     db: AsyncSession = Depends(get_db),
     embedding_svc: EmbeddingService = Depends(get_embedding_service),
 ) -> ChatResponse:
-    from agents.providers import get_provider
-
     schema = await SchemaRepository(db).get_by_key(key)
     if schema is None:
         raise HTTPException(status_code=404, detail=f"Schema '{key}' not found")
@@ -227,29 +211,52 @@ async def chat_documents(
         "If the answer cannot be determined from the data, say so.\n\n"
         f"Company Expense Policy:\n{policy_text}"
     )
-    messages = [{"role": m.role, "content": m.content} for m in body.history]
-    messages.append({"role": "user", "content": f"Receipts:\n{context}\n\nQuestion: {body.message}"})
 
-    provider = get_provider("enrichment")
-    text, tool_name, tool_input = await asyncio.to_thread(
-        provider.call_and_maybe_use_tool,
-        system_prompt,
-        messages,
-        [_UPDATE_POLICY_TOOL],
-    )
+    # Build a LangChain message list from conversation history + current turn.
+    # LangChain distinguishes SystemMessage, HumanMessage, AIMessage, and ToolMessage —
+    # each maps to a specific role in the provider's API.
+    lc_messages: list = [SystemMessage(content=system_prompt)]
+    for m in body.history:
+        if m.role == "user":
+            lc_messages.append(HumanMessage(content=m.content))
+        elif m.role == "assistant":
+            lc_messages.append(AIMessage(content=m.content))
+    lc_messages.append(HumanMessage(
+        content=f"Receipts:\n{context}\n\nQuestion: {body.message}"
+    ))
+
+    # bind_tools() attaches the update_policy tool to the model.
+    # The model decides on its own whether to call it.
+    from agents.llm import get_chat_model
+    model_with_tools = get_chat_model("enrichment").bind_tools([update_policy])
+
+    def _first_pass() -> tuple[str | None, str | None, dict | None, str | None]:
+        response = model_with_tools.invoke(lc_messages)
+        if response.tool_calls:
+            call = response.tool_calls[0]
+            return None, call["name"], call["args"], call["id"]
+        return response.content, None, None, None
+
+    def _second_pass(tool_call_id: str, tool_result: str) -> str:
+        # Append the AI tool-call turn and a ToolMessage with the result,
+        # then ask the model to produce the final user-facing response.
+        extended = list(lc_messages)
+        extended.append(AIMessage(
+            content="",
+            tool_calls=[{"name": "update_policy", "args": tool_input, "id": tool_call_id, "type": "tool_call"}],
+        ))
+        extended.append(ToolMessage(content=tool_result, tool_call_id=tool_call_id))
+        chain = model_with_tools | StrOutputParser()
+        return chain.invoke(extended)
+
+    text, tool_name, tool_input, tool_call_id = await asyncio.to_thread(_first_pass)
 
     policy_updated = False
     if tool_name == "update_policy" and tool_input:
-        await SchemaRepository(db).update_validation_rules(key, tool_input["rules"])
+        rules_data = [{"id": r["id"], "text": r["text"]} for r in tool_input["rules"]]
+        await SchemaRepository(db).update_validation_rules(key, rules_data)
         policy_updated = True
-        answer = await asyncio.to_thread(
-            provider.continue_after_tool,
-            system_prompt,
-            messages,
-            tool_name,
-            tool_input,
-            "Policy updated successfully.",
-        )
+        answer = await asyncio.to_thread(_second_pass, tool_call_id, "Policy updated successfully.")
     else:
         answer = text or ""
 

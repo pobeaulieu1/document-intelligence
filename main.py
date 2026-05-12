@@ -28,7 +28,7 @@ async def lifespan(_: FastAPI):
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
-    logger.info("Agent provider configuration:")
+    logger.info("Agent configuration:")
     for agent, cfg in settings.get_agents().items():
         logger.info("  %-20s → %s (%s)", agent, cfg["provider"], cfg["model"])
 
