@@ -2,10 +2,12 @@ from config import settings
 from .anthropic_provider import AnthropicProvider
 from .base import LLMProvider
 from .gemini_provider import GeminiProvider
+from .openai_provider import OpenAIProvider
 
 _REGISTRY = {
     "anthropic": lambda model: AnthropicProvider(api_key=settings.ANTHROPIC_API_KEY, model=model),
     "gemini": lambda model: GeminiProvider(api_key=settings.GEMINI_API_KEY, model=model),
+    "openai": lambda model: OpenAIProvider(api_key=settings.OPENAI_API_KEY, model=model),
 }
 
 

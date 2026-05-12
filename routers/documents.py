@@ -1,3 +1,5 @@
+import asyncio
+import json
 import uuid
 from typing import Literal
 
@@ -11,10 +13,24 @@ from db.models import ExtractionORM
 from db.repository import ExtractionRepository, SchemaRepository
 from models.schemas import ExtractionResult
 from services.document_service import DocumentService, get_document_service
+from services.embedding import EmbeddingService, get_embedding_service
 
 
 class StatusUpdate(BaseModel):
     status: Literal["accepted", "needs_review"]
+
+
+class SearchRequest(BaseModel):
+    q: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: list[ExtractionResult]
 
 router = APIRouter(prefix="/schemas", tags=["documents"])
 
@@ -88,6 +104,87 @@ async def list_documents(
         raise HTTPException(status_code=404, detail=f"Schema '{key}' not found")
     extractions = await ExtractionRepository(db).list_by_schema(schema.id)
     return [_orm_to_result(e) for e in extractions]
+
+
+@router.post("/{key}/documents/search", response_model=list[ExtractionResult])
+async def search_documents(
+    key: str,
+    body: SearchRequest,
+    db: AsyncSession = Depends(get_db),
+    embedding_svc: EmbeddingService = Depends(get_embedding_service),
+) -> list[ExtractionResult]:
+    schema = await SchemaRepository(db).get_by_key(key)
+    if schema is None:
+        raise HTTPException(status_code=404, detail=f"Schema '{key}' not found")
+
+    vectors = embedding_svc.embed_texts([body.q])
+    if not vectors:
+        raise HTTPException(status_code=503, detail="Embedding service unavailable")
+
+    hits = await ExtractionRepository(db).semantic_search(vectors[0], schema.id, limit=20)
+
+    seen: set = set()
+    results: list[ExtractionResult] = []
+    for hit in hits:
+        if hit.extraction_id not in seen:
+            seen.add(hit.extraction_id)
+            results.append(_orm_to_result(hit.extraction))
+    return results
+
+
+@router.post("/{key}/chat", response_model=ChatResponse)
+async def chat_documents(
+    key: str,
+    body: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    embedding_svc: EmbeddingService = Depends(get_embedding_service),
+) -> ChatResponse:
+    from agents.providers import get_provider
+
+    schema = await SchemaRepository(db).get_by_key(key)
+    if schema is None:
+        raise HTTPException(status_code=404, detail=f"Schema '{key}' not found")
+
+    repo = ExtractionRepository(db)
+    context_docs = []
+    source_docs = []
+
+    vectors = embedding_svc.embed_texts([body.message])
+    if vectors:
+        hits = await repo.semantic_search(vectors[0], schema.id, limit=10)
+        seen: set = set()
+        for hit in hits:
+            if hit.extraction_id not in seen:
+                seen.add(hit.extraction_id)
+                context_docs.append(hit.extraction)
+
+    if not context_docs:
+        all_docs = await repo.list_by_schema(schema.id)
+        context_docs = all_docs[:10]
+
+    source_docs = context_docs[:5]
+
+    context = json.dumps(
+        [{"id": str(d.id), "file_name": d.file_name, "data": d.data, "enrichments": d.enrichments}
+         for d in context_docs],
+        indent=2,
+        default=str,
+    )
+
+    provider = get_provider("enrichment")
+    answer = await asyncio.to_thread(
+        provider.call_plain,
+        (
+            "You are an assistant that answers questions about expense receipts. "
+            "Answer concisely and accurately based only on the receipt data provided. "
+            "When you reference a specific receipt, cite it inline as a markdown link using its id field: "
+            "[Merchant Name](/receipts/ID). "
+            "If the answer cannot be determined from the data, say so."
+        ),
+        f"Receipts:\n{context}\n\nQuestion: {body.message}",
+    )
+
+    return ChatResponse(answer=answer, sources=[_orm_to_result(d) for d in source_docs])
 
 
 @router.delete("/{key}/documents/{doc_id}", status_code=204)

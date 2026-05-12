@@ -7,6 +7,7 @@ load_dotenv()
 # API keys — sourced from .env only
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://automation:automation@localhost:5432/automation",

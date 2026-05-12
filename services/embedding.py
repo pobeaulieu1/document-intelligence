@@ -18,6 +18,8 @@ class EmbeddingService:
         try:
             if self._provider == "google":
                 return self._embed_with_google(texts)
+            if self._provider == "openai":
+                return self._embed_with_openai(texts)
             raise ValueError(f"Unknown embedding provider: {self._provider}")
         except Exception as exc:
             logger.warning("Embedding failed, storing without vectors: %s", exc)
@@ -29,6 +31,13 @@ class EmbeddingService:
         client = genai.Client(api_key=self._api_key)
         response = client.models.embed_content(model=self._model, contents=texts)
         return [e.values for e in response.embeddings]
+
+    def _embed_with_openai(self, texts: list[str]) -> list[list[float]]:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=self._api_key)
+        response = client.embeddings.create(model=self._model, input=texts)
+        return [item.embedding for item in response.data]
 
 
 def extract_embed_pairs(data: dict, embed_fields: list[str]) -> list[tuple[str, str]]:
@@ -56,6 +65,7 @@ def get_embedding_service() -> EmbeddingService:
     cfg = settings.get_embedding_config()
     api_key_map = {
         "google": settings.GEMINI_API_KEY,
+        "openai": settings.OPENAI_API_KEY,
     }
     return EmbeddingService(
         provider=cfg["provider"],

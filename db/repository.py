@@ -136,10 +136,15 @@ class ExtractionRepository:
         query_embedding: list[float],
         schema_id: uuid.UUID | None = None,
         limit: int = 10,
+        max_distance: float = 0.5,
     ) -> list[ExtractionEmbeddingORM]:
         query = (
             select(ExtractionEmbeddingORM)
-            .options(selectinload(ExtractionEmbeddingORM.extraction))
+            .options(
+                selectinload(ExtractionEmbeddingORM.extraction)
+                .selectinload(ExtractionORM.schema)
+            )
+            .where(ExtractionEmbeddingORM.embedding.cosine_distance(query_embedding) < max_distance)
             .order_by(ExtractionEmbeddingORM.embedding.cosine_distance(query_embedding))
             .limit(limit)
         )

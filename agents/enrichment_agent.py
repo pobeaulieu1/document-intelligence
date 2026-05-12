@@ -16,13 +16,22 @@ from agents.providers import get_provider
 from db.models import ExtractionSchemaORM
 
 _SYSTEM_PROMPT = (
-    "You are an expert expense analyst. Given structured data extracted from a document, "
-    "classify each field accurately based on its content. "
+    "You are an expert expense analyst. You are given structured data extracted from a receipt "
+    "and, when available, the original receipt image or PDF. "
+    "Use both sources — especially the original document — to classify each field accurately. "
+    "For embed_text, write 2-3 sentences covering only what someone would search for: "
+    "merchant name, city/location, delivery platform if any, what was purchased, and total amount. "
+    "Be concise — omit tax lines, fees, and formatting details. "
     "Always call the enrichment tool with your analysis."
 )
 
 
-def categorize_document(extracted_data: dict, schema: ExtractionSchemaORM) -> dict:
+def categorize_document(
+    extracted_data: dict,
+    schema: ExtractionSchemaORM,
+    file_bytes: bytes | None = None,
+    media_type: str | None = None,
+) -> dict:
     """
     Use the LLM to populate the categorization fields defined on the schema.
 
@@ -49,11 +58,17 @@ def categorize_document(extracted_data: dict, schema: ExtractionSchemaORM) -> di
 
     return provider.call_with_tool(
         system_prompt=_SYSTEM_PROMPT,
-        user_message=f"Classify this {schema.name} expense:\n\n{data_text}",
+        user_message=(
+            f"Classify this {schema.name} expense.\n\n"
+            f"Structured data:\n{data_text}\n\n"
+            f"{'The original receipt is attached — use it to fill embed_text with everything visible.' if file_bytes else ''}"
+        ),
         tool_name=f"categorize_{schema.key}",
         tool_description=(
             f"Classify the semantic fields of a {schema.name} document. "
             f"Fields to fill: {', '.join(enrichment_fields)}."
         ),
         tool_parameters=tool_params,
+        file_bytes=file_bytes,
+        media_type=media_type,
     )

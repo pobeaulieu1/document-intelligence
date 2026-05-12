@@ -45,7 +45,9 @@ class DocumentService:
         categorization: dict = {}
         if schema.enrichment_fields:
             try:
-                categorization = await asyncio.to_thread(categorize_document, data, schema)
+                categorization = await asyncio.to_thread(
+                    categorize_document, data, schema, file_bytes, file_content_type
+                )
                 logger.info("Agent 2 categorized: %s", categorization)
             except Exception as exc:
                 logger.warning("Agent 2 categorization failed, skipping: %s", exc)

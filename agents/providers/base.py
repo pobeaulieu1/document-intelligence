@@ -36,3 +36,7 @@ class LLMProvider(Protocol):
             A plain Python dict containing the tool call arguments.
         """
         ...
+
+    def call_plain(self, system_prompt: str, user_message: str) -> str:
+        """Send a plain text prompt and return the model's text response."""
+        ...

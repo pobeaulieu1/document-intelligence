@@ -4,8 +4,8 @@ SCHEMA = SchemaConfig(
     key="receipt",
     name="Receipt",
     description="Extract structured data from retail and restaurant receipts",
-    enrichment_fields=["category", "summary"],
-    embed_fields=["merchant_name", "line_items"],
+    enrichment_fields=["category", "summary", "embed_text"],
+    embed_fields=["embed_text"],
     tool_schema={
         "type": "object",
         "required": ["merchant_name", "total_amount", "currency", "line_items"],
@@ -61,6 +61,14 @@ SCHEMA = SchemaConfig(
                 "enum": ["accepted", "needs_review"],
                 "description": "accepted when is_compliant is true, needs_review otherwise",
             },
+            "embed_text": {
+                "type": "string",
+                "description": (
+                    "2-3 sentence plain-text description for semantic search. "
+                    "Cover: merchant name, city/location, delivery platform if any (e.g. Uber Eats, DoorDash), "
+                    "main items purchased, and total amount. Omit taxes, fees, and formatting details."
+                ),
+            }
         },
     },
     validation_rules=ValidationRules(
@@ -69,8 +77,9 @@ SCHEMA = SchemaConfig(
                 id="meal_limit",
                 text=(
                     "Meals must not exceed $50 per person. "
-                    "Count main-course portions in line_items (each ramen, burger, entree, or main dish = 1 person; multiply by quantity). "
-                    "Divide total_amount by that headcount before checking the $50 limit."
+                    "Count the number of main-course portions in line_items (entrees, main dishes — exclude drinks, sides, fees). "
+                    "Multiply each item's quantity. Divide total_amount by that headcount. "
+                    "In your violation message, name the actual dish from the receipt."
                 ),
             ),
             PolicyRule(

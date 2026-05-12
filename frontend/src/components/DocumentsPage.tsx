@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Upload, RefreshCw, ReceiptText, AlertTriangle, DollarSign, Settings } from "lucide-react";
+import { Upload, RefreshCw, ReceiptText, AlertTriangle, DollarSign, Settings, MessageSquare } from "lucide-react";
 import { listDocuments } from "../api";
 import { t } from "../theme";
 import { DocumentTable } from "./DocumentTable";
-import { DocumentDrawer } from "./DocumentDrawer";
 import { UploadModal } from "./UploadModal";
 import { SettingsPanel } from "./SettingsPanel";
 import type { Extraction } from "../types";
@@ -15,11 +15,15 @@ function fmtCurrency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
-export function DocumentsPage() {
-  const [selected, setSelected]     = useState<Extraction | null>(null);
-  const [showUpload, setShowUpload]  = useState(false);
+interface Props {
+  onOpenChat: () => void;
+}
+
+export function DocumentsPage({ onOpenChat }: Props) {
+  const navigate = useNavigate();
+  const [showUpload, setShowUpload]     = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [newId, setNewId]           = useState<string | undefined>();
+  const [newId, setNewId]               = useState<string | undefined>();
 
   const { data: docs = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["documents", SCHEMA_KEY],
@@ -53,6 +57,10 @@ export function DocumentsPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button onClick={onOpenChat} className={t.btnGhost}>
+              <MessageSquare size={15} />
+              Ask AI
+            </button>
             <button
               onClick={() => setShowSettings(true)}
               className={t.btnGhost}
@@ -118,11 +126,7 @@ export function DocumentsPage() {
                 </p>
               )}
             </div>
-            <button
-              onClick={() => refetch()}
-              className={t.btnGhost}
-              title="Refresh"
-            >
+            <button onClick={() => refetch()} className={t.btnGhost} title="Refresh">
               <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
             </button>
           </div>
@@ -150,7 +154,7 @@ export function DocumentsPage() {
             <DocumentTable
               documents={docs}
               newId={newId}
-              onRowClick={setSelected}
+              onRowClick={(doc) => navigate(`/receipts/${doc.id}`)}
             />
           )}
         </div>
@@ -161,14 +165,6 @@ export function DocumentsPage() {
           schemaKey={SCHEMA_KEY}
           onSuccess={handleUploadSuccess}
           onClose={() => setShowUpload(false)}
-        />
-      )}
-
-      {selected && (
-        <DocumentDrawer
-          doc={selected}
-          onClose={() => setSelected(null)}
-          onDocChange={setSelected}
         />
       )}
 

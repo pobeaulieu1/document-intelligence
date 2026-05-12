@@ -5,7 +5,7 @@ import anthropic
 
 class AnthropicProvider:
     def __init__(self, api_key: str, model: str) -> None:
-        self._client = anthropic.Anthropic(api_key=api_key or None)
+        self._client = anthropic.Anthropic(api_key=api_key or None, max_retries=6)
         self._model = model
 
     def call_with_tool(
@@ -61,3 +61,12 @@ class AnthropicProvider:
             raise ValueError(f"Anthropic ({self._model}) did not call tool '{tool_name}'")
 
         return tool_block.input
+
+    def call_plain(self, system_prompt: str, user_message: str) -> str:
+        response = self._client.messages.create(
+            model=self._model,
+            max_tokens=1024,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        return response.content[0].text

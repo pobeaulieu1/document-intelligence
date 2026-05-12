@@ -20,6 +20,23 @@ export async function uploadDocument(schemaKey: string, file: File): Promise<Ext
   return json(await fetch(`/schemas/${schemaKey}/documents`, { method: "POST", body: form }));
 }
 
+export async function chatWithDocuments(
+  schemaKey: string,
+  message: string
+): Promise<{ answer: string; sources: Extraction[] }> {
+  return json(
+    await fetch(`/schemas/${schemaKey}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    })
+  );
+}
+
+export async function getDocumentById(schemaKey: string, docId: string): Promise<Extraction> {
+  return json(await fetch(`/schemas/${schemaKey}/documents/${docId}`));
+}
+
 export async function deleteDocument(schemaKey: string, docId: string): Promise<void> {
   const res = await fetch(`/schemas/${schemaKey}/documents/${docId}`, { method: "DELETE" });
   if (!res.ok) {

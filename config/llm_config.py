@@ -8,12 +8,12 @@ CONFIG = LLMConfig(
         ),
         "enrichment": AgentConfig(
             provider="anthropic",
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
         ),
     },
     embeddings=EmbeddingConfig(
-        provider="none",
-        model="",
-        dimensions=768,
+        provider="openai",
+        model="text-embedding-3-small",
+        dimensions=1536,
     ),
 )

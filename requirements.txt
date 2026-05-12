@@ -8,6 +8,7 @@ pillow>=11.0.0
 pydantic>=2.10.0
 python-dotenv>=1.0.0
 google-genai>=1.0.0
+openai>=1.0.0
 
 # Database
 sqlalchemy[asyncio]>=2.0.0

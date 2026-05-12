@@ -1,5 +1,11 @@
+import { useState } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DocumentsPage } from "./components/DocumentsPage";
+import { ReceiptPage } from "./components/ReceiptPage";
+import { ChatPanel } from "./components/ChatPanel";
+
+const SCHEMA_KEY = "receipt";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -7,10 +13,25 @@ const queryClient = new QueryClient({
   },
 });
 
+export type ChatState = "closed" | "open" | "minimized";
+
 export default function App() {
+  const [chatState, setChatState] = useState<ChatState>("closed");
+
   return (
     <QueryClientProvider client={queryClient}>
-      <DocumentsPage />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<DocumentsPage onOpenChat={() => setChatState("open")} />} />
+          <Route path="/receipts/:id" element={<ReceiptPage onOpenChat={() => setChatState("open")} />} />
+        </Routes>
+
+        <ChatPanel
+          schemaKey={SCHEMA_KEY}
+          state={chatState}
+          onStateChange={setChatState}
+        />
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }

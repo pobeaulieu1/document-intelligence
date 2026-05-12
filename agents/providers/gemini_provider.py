@@ -60,6 +60,14 @@ class GeminiProvider:
 
         return dict(fc.args)
 
+    def call_plain(self, system_prompt: str, user_message: str) -> str:
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user_message,
+            config=types.GenerateContentConfig(system_instruction=system_prompt),
+        )
+        return response.text
+
     def _build_schema(self, schema: dict) -> types.Schema:
         """Convert a standard JSON Schema dict to a google.genai Schema object."""
         type_map = {
