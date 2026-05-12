@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, FileText, AlertTriangle, Trash2, Loader2,
-  CheckCircle2, Sparkles, RefreshCw, MessageSquare,
+  CheckCircle2, Sparkles, RefreshCw,
   Utensils, Car, BedDouble, Monitor, Package,
   type LucideIcon,
 } from "lucide-react";
@@ -41,11 +41,10 @@ function Skeleton({ className }: { className?: string }) {
 interface FilePreview { url: string; type: string }
 
 interface Props {
-  onOpenChat: () => void;
   isRecomputing?: boolean;
 }
 
-export function ReceiptPage({ onOpenChat, isRecomputing = false }: Props) {
+export function ReceiptPage({ isRecomputing = false }: Props) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -128,26 +127,23 @@ export function ReceiptPage({ onOpenChat, isRecomputing = false }: Props) {
   const isPdf         = preview?.type === "application/pdf";
 
   return (
-    <div className="min-h-screen bg-[#f7f8fa] flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-100 shrink-0">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-4">
-          <button onClick={() => navigate("/")} className={t.btnGhost}>
-            <ArrowLeft size={14} />
-            Back
+    <div className="flex flex-col" style={{ height: "calc(100vh - 57px)" }}>
+      {/* Breadcrumb */}
+      <div className="bg-white border-b border-gray-100 shrink-0">
+        <div className="max-w-7xl mx-auto px-6 h-10 flex items-center gap-3">
+          <button onClick={() => navigate("/")} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors">
+            <ArrowLeft size={13} />
+            Receipts
           </button>
-          <span className="text-sm font-semibold text-gray-900 truncate flex-1">
+          <span className="text-gray-300 text-xs">/</span>
+          <span className="text-xs font-medium text-gray-700 truncate">
             {displayed.file_name ?? "Receipt"}
           </span>
-          <button onClick={onOpenChat} className={t.btnGhost}>
-            <MessageSquare size={15} />
-            Ask AI
-          </button>
         </div>
-      </header>
+      </div>
 
       {/* Content */}
-      <div className="flex-1 flex max-w-7xl w-full mx-auto px-6 py-8 gap-6 min-h-0">
+      <div className="flex-1 flex max-w-7xl w-full mx-auto px-6 py-6 gap-6 min-h-0">
         {/* Left: file preview */}
         <div className="flex-1 bg-white rounded-2xl shadow-card overflow-hidden flex items-center justify-center">
           {isImage && preview && (

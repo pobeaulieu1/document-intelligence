@@ -77,7 +77,10 @@ export function ChatPanel({ schemaKey, state, onStateChange, onRecomputeStart, o
     }
   }
 
-  const lastMsg = messages[messages.length - 1];
+  function handleClose() {
+    setMessages([]);
+    onStateChange("closed");
+  }
 
   // ── FAB ──────────────────────────────────────────────────────────────────
   if (state === "closed") {
@@ -86,7 +89,6 @@ export function ChatPanel({ schemaKey, state, onStateChange, onRecomputeStart, o
         <button
           onClick={() => onStateChange("open")}
           className="relative w-14 h-14 bg-brand-600 hover:bg-brand-700 text-white rounded-full shadow-modal flex items-center justify-center transition-colors"
-          title="Ask AI"
         >
           <MessageSquare size={22} />
           {messages.length > 0 && (
@@ -99,41 +101,6 @@ export function ChatPanel({ schemaKey, state, onStateChange, onRecomputeStart, o
     );
   }
 
-  // ── Minimized header bar ──────────────────────────────────────────────────
-  if (state === "minimized") {
-    return (
-      <div className="fixed bottom-6 right-6 z-50 w-[520px]">
-        <div
-          className="flex items-center justify-between px-4 h-12 bg-brand-600 text-white rounded-2xl shadow-modal cursor-pointer select-none"
-          onClick={() => onStateChange("open")}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <MessageSquare size={15} className="shrink-0" />
-            <span className="text-sm font-semibold truncate">
-              {lastMsg ? lastMsg.content.slice(0, 40) + (lastMsg.content.length > 40 ? "…" : "") : "Ask your receipts"}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 shrink-0 ml-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); onStateChange("open"); }}
-              className="p-1 rounded hover:bg-white/20 transition-colors"
-              title="Expand"
-            >
-              <MessageSquare size={14} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onStateChange("closed"); }}
-              className="p-1 rounded hover:bg-white/20 transition-colors"
-              title="Close"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // ── Open (full panel) ─────────────────────────────────────────────────────
   return (
     <div className="fixed bottom-6 right-6 z-50 w-[520px] flex flex-col bg-white rounded-2xl shadow-modal overflow-hidden animate-slide-in" style={{ height: "680px" }}>
@@ -141,20 +108,20 @@ export function ChatPanel({ schemaKey, state, onStateChange, onRecomputeStart, o
       <div className="shrink-0 flex items-center justify-between px-4 h-12 bg-brand-600 text-white">
         <div className="flex items-center gap-2">
           <MessageSquare size={15} />
-          <span className="text-sm font-semibold">Ask your receipts</span>
+          <span className="text-sm font-semibold">AI Chatbot</span>
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => onStateChange("minimized")}
+            onClick={() => onStateChange("closed")}
             className="p-1 rounded hover:bg-white/20 transition-colors"
             title="Minimize"
           >
             <Minus size={14} />
           </button>
           <button
-            onClick={() => onStateChange("closed")}
+            onClick={handleClose}
             className="p-1 rounded hover:bg-white/20 transition-colors"
-            title="Close"
+            title="Close and clear chat"
           >
             <X size={14} />
           </button>
