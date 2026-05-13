@@ -1,6 +1,58 @@
-# Document Intelligence Platform
+# Document Intelligence
 
-A generic multi-agent platform for extracting, classifying, and validating structured data from documents. Configured for **expense management** (receipts) out of the box — designed to support any document type without code changes.
+A multi-agent platform for extracting, enriching, and validating structured data from documents. Configured for **expense management** (receipts) out of the box — designed to support any document type without code changes.
+
+---
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph FE["Frontend — React + Vite"]
+        UI[Documents / Receipt Pages]
+        Chat[Chat Panel]
+        Policy[Policy Editor]
+    end
+
+    subgraph BE["Backend — FastAPI"]
+        Router[Routers]
+        DS[Document Service]
+
+        subgraph Pipeline["3-Stage Agent Pipeline"]
+            direction TB
+            A1["Agent 1 · Extraction\nclaude-sonnet-4-6\n— forced tool use —\nextracts structured fields"]
+            A2["Agent 2 · Enrichment\nclaude-haiku-4-5\n— forced tool use —\nfills semantic fields"]
+            A3["Agent 3 · Validation\nclaude-haiku-4-5\n— per-rule LLM calls —\nevaluates policy compliance"]
+            A1 --> A2 --> A3
+        end
+
+        Embed[Embedding Service]
+    end
+
+    subgraph DB["PostgreSQL 16 + pgvector"]
+        T1[(extraction_schemas)]
+        T2[(extractions)]
+        T3[(extraction_embeddings)]
+    end
+
+    subgraph APIs["External APIs"]
+        Anthropic[Anthropic]
+        OpenAI[OpenAI]
+        Gemini[Google Gemini]
+    end
+
+    FE -->|"REST / multipart"| Router
+    Router --> DS
+    DS --> Pipeline
+    A3 --> Embed
+    Embed --> T3
+    DS --> T2
+    Router -.-> T1
+
+    A1 & A2 & A3 -.->|tool use| Anthropic
+    Embed -.->|embeddings| OpenAI
+    Embed -.->|embeddings| Gemini
+```
 
 ---
 
@@ -18,77 +70,68 @@ Agent 1 — Extraction  (claude-sonnet-4-6)
   │
   ▼
 Agent 2 — Enrichment  (claude-haiku-4-5)
-  │  Classifies semantic fields that require understanding of the content,
-  │  not just reading it (e.g. expense category: meals / transport / …).
-  │  Only runs for fields listed in the schema's categorize_fields.
+  │  Classifies semantic fields that require understanding, not just
+  │  reading (e.g. expense category: meals / transport / …).
+  │  Only runs for fields listed in enrichment_fields.
   │
   ▼
-Validation Engine  (deterministic)
-  │  Evaluates configurable rules against the extracted data and
-  │  enrichments. Rules are stored in the database and editable at
-  │  runtime via the API — no redeploy needed.
+Agent 3 — Validation  (claude-haiku-4-5)
+  │  Evaluates each policy rule in isolation via a dedicated LLM call.
+  │  Numeric rules (TYPE A) use Python comparison after LLM parsing.
+  │  Non-numeric rules (TYPE B) are fully LLM-evaluated.
+  │  Rules are stored in the database and editable at runtime — no redeploy needed.
   │  Produces: is_compliant, violations[], status.
   │
   ▼
-PostgreSQL + pgvector
-     Stores data (Agent 1) and enrichments (Agent 2 + validation)
-     in separate JSONB columns. Embeds selected fields for semantic search.
+Embedding + Storage
+     Embeds selected fields for semantic search (pgvector).
+     All results stored in PostgreSQL with the original file.
 ```
 
 ---
 
 ## Data model
 
-Three tables, one schema:
+Three tables:
 
 ```
 extraction_schemas
-├── id            UUID PK
-├── key           TEXT UNIQUE        — slug used in every API path (e.g. "receipt")
-├── name          TEXT               — human-readable label
-├── description   TEXT
-├── tool_schema   JSONB              — JSON Schema for Agent 1 extraction
-├── enrichments_schema JSONB         — JSON Schema describing Agent 2 + validation output
-├── system_prompt TEXT               — overrides the default Agent 1 prompt
-├── embed_fields  TEXT[]             — data fields to embed for vector search
-├── categorize_fields TEXT[]         — enrichment fields the LLM fills (Agent 2)
-├── validation_rules JSONB           — rules evaluated by the validation engine
-├── created_at    TIMESTAMPTZ
-└── updated_at    TIMESTAMPTZ
+├── key                 TEXT UNIQUE        — slug used in every API path (e.g. "receipt")
+├── name / description  TEXT
+├── tool_schema         JSONB              — JSON Schema for Agent 1 extraction
+├── enrichments_schema  JSONB              — JSON Schema for Agent 2 + validation output
+├── system_prompt       TEXT               — overrides the default Agent 1 prompt
+├── embed_fields        TEXT[]             — data fields to embed for vector search
+├── enrichment_fields   TEXT[]             — enrichment fields the LLM fills (Agent 2)
+└── validation_rules    JSONB              — policy rules (editable at runtime)
 
 extractions
-├── id            UUID PK
-├── schema_id     UUID FK → extraction_schemas.id  (CASCADE DELETE)
-├── file_name     TEXT
-├── file_hash     TEXT               — SHA-256, used to detect duplicates
-├── data          JSONB              — Agent 1 output; shape matches tool_schema
-├── enrichments   JSONB              — Agent 2 + validation output; includes
-│                                      category, is_compliant, violations, status
-├── confidence    NUMERIC(4,3)
-└── created_at    TIMESTAMPTZ
+├── schema_id   UUID FK → extraction_schemas
+├── file_name   TEXT
+├── file_hash   TEXT                       — SHA-256, used to detect duplicates
+├── file_data   BYTEA                      — original PDF / image stored verbatim
+├── data        JSONB                      — Agent 1 output
+├── enrichments JSONB                      — Agent 2 + validation output
+└── confidence  NUMERIC(4,3)
 
 extraction_embeddings
-├── id            UUID PK
-├── extraction_id UUID FK → extractions.id  (CASCADE DELETE)
-├── field_path    TEXT               — dot-path of the embedded field (e.g. "merchant_name")
-├── field_value   TEXT               — text that was embedded
-└── embedding     vector(768)        — pgvector column for similarity search
+├── extraction_id  UUID FK → extractions
+├── field_path     TEXT                    — dot-path of embedded field
+├── field_value    TEXT
+└── embedding      vector(1536)            — pgvector cosine similarity search
 ```
 
 ### Separation of concerns
 
-| Column | Who writes it | When |
-|--------|--------------|------|
-| `data` | Agent 1 (LLM) | At upload time |
-| `enrichments.category` | Agent 2 (LLM) | At upload time |
-| `enrichments.is_compliant` / `violations` / `status` | Validation engine (deterministic) | At upload time, or re-triggered via `POST …/validate` |
+| Column | Written by | When |
+|--------|-----------|------|
+| `data` | Agent 1 (LLM) | Upload |
+| `enrichments.category` / `summary` / `embed_text` | Agent 2 (LLM) | Upload |
+| `enrichments.is_compliant` / `violations` / `status` | Agent 3 (LLM, per-rule) | Upload or re-validation |
 
-The `validation_rules` on a schema can be updated at any time via `PUT /schemas/{key}/validation`. Re-running `POST /schemas/{key}/documents/{id}/validate` applies the new rules to an existing extraction without touching Agent 1/2 output.
+### Receipt example
 
-### Receipt schema (example)
-
-The `data` column for a receipt looks like:
-
+`data`:
 ```json
 {
   "merchant_name": "Pho Saigon",
@@ -103,11 +146,11 @@ The `data` column for a receipt looks like:
 }
 ```
 
-The `enrichments` column:
-
+`enrichments`:
 ```json
 {
   "category": "meals",
+  "summary": "Lunch for 2 at Pho Saigon — noodle soup and spring rolls",
   "is_compliant": true,
   "violations": [],
   "status": "accepted"
@@ -116,17 +159,67 @@ The `enrichments` column:
 
 ---
 
+## Embeddings
+
+Semantic search is powered by pgvector. Rather than embedding raw extracted fields directly, Agent 2 writes a dedicated `embed_text` enrichment field — a 2–3 sentence plain-English description tuned for search relevance (merchant, location, items, amount). That single field is what gets vectorized.
+
+### How it's configured
+
+Two places control embedding behavior:
+
+**`config/llm_config.py`** — provider, model, and vector dimensions:
+
+```python
+embeddings=EmbeddingConfig(
+    provider="openai",          # "openai" | "google" | "none"
+    model="text-embedding-3-small",
+    dimensions=1536,
+)
+```
+
+**`config/schemas/{key}.py`** — which fields to embed:
+
+```python
+enrichment_fields=["category", "summary", "embed_text"],  # Agent 2 fills these
+embed_fields=["embed_text"],                              # only this one gets vectorized
+```
+
+`embed_fields` can reference any field in `data` or `enrichments`. For nested structures (arrays of strings or objects), each leaf value is stored as a separate row in `extraction_embeddings` with a dot-notation path (e.g. `line_items.0.description`).
+
+### Supported providers
+
+| Provider | Models | Key env var |
+|----------|--------|-------------|
+| `openai` | `text-embedding-3-small` (1536-dim), `text-embedding-3-large` (3072-dim) | `OPENAI_API_KEY` |
+| `google` | `text-embedding-004` (768-dim) | `GEMINI_API_KEY` |
+| `none` | — | — |
+
+Set `provider="none"` to disable embeddings entirely — the rest of the pipeline (extraction, enrichment, validation) still works. The semantic search endpoint will return no results.
+
+### Semantic search
+
+```bash
+POST /schemas/{key}/documents/search
+Content-Type: application/json
+
+{ "query": "restaurant lunch downtown", "limit": 5 }
+```
+
+The query is embedded with the same model, then ranked by cosine similarity against all stored vectors for that schema. Results include the matched field path and similarity score alongside the full extraction.
+
+---
+
 ## Setup
 
-**Prerequisites:** Docker, Python 3.11+
+**Prerequisites:** Docker, Python 3.11+, Node.js 18+
 
 ```bash
 cp .env.example .env      # fill in ANTHROPIC_API_KEY (minimum)
 make setup                # install → start Postgres → migrate → seed schemas
-make dev                  # start the API at http://localhost:8000
+make dev                  # API at http://localhost:8000
 ```
 
-> **macOS with Homebrew:** `make` may be installed as `gmake`. Use `gmake` for all commands.
+> **macOS with Homebrew:** `make` may be installed as `gmake`.
 
 ### Step by step
 
@@ -134,8 +227,13 @@ make dev                  # start the API at http://localhost:8000
 make install   # pip install -r requirements.txt
 make db        # docker compose up -d  (Postgres 16 + pgvector)
 make migrate   # alembic upgrade head
-make seed      # insert the receipt schema into the database
+make seed      # push config/schemas/*.py to the database
 make dev       # uvicorn with --reload
+```
+
+Frontend:
+```bash
+cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
 ---
@@ -144,54 +242,38 @@ make dev       # uvicorn with --reload
 
 ### LLM config — `config/llm_config.py`
 
-Provider and model per agent, written as typed Python (type-checked at import time):
+Provider and model per agent; exposed read-only at `GET /config/llm`:
 
 ```python
-from models.schemas import AgentConfig, EmbeddingConfig, LLMConfig
-
 CONFIG = LLMConfig(
     agents={
         "extraction": AgentConfig(provider="anthropic", model="claude-sonnet-4-6"),
         "enrichment": AgentConfig(provider="anthropic", model="claude-haiku-4-5-20251001"),
     },
-    embeddings=EmbeddingConfig(provider="none", model="", dimensions=768),
+    embeddings=EmbeddingConfig(provider="none", model="", dimensions=1536),
 )
 ```
 
-Exposed read-only at `GET /config/llm`.
-
 ### Schema config — `config/schemas/receipt.py`
 
-Each document type is a `SchemaConfig` instance — also typed Python, not YAML or JSON:
+Each document type is a typed `SchemaConfig`:
 
 ```python
 SCHEMA = SchemaConfig(
     key="receipt",
-    categorize_fields=["category"],
-    embed_fields=["merchant_name", "line_items"],
-    tool_schema={ ... },           # JSON Schema for Agent 1
-    enrichments_schema={ ... },    # JSON Schema for Agent 2 + validation output
-    validation_rules=ValidationRules(rules=[
-        ValidationRule(
-            id="max_meal_amount",
-            source=Source.data, field="total_amount",
-            operator=Operator.lte, value=50,
-            condition=ValidationRuleCondition(
-                source=Source.enrichments, field="category",
-                operator=Operator.eq, value="meals",
-            ),
-            message="Meal expense exceeds the $50 per-person limit",
-        ),
-        ...
-    ]),
+    enrichment_fields=["category", "summary", "embed_text"],
+    embed_fields=["embed_text"],
+    tool_schema={ ... },           # JSON Schema → Agent 1
+    enrichments_schema={ ... },    # JSON Schema → Agent 2 + 3
+    validation_rules=[ ... ],      # policy rules
 )
 ```
 
-Run `make seed` (or `make seed --force` to overwrite) to push configs to the database.
+Run `make seed` (or `make seed --force` to overwrite) to sync to the database.
 
 ### Validation rules
 
-Rules can also be updated at runtime — no redeploy:
+Rules are stored in the database and can be updated at runtime:
 
 ```bash
 curl -X PUT http://localhost:8000/schemas/receipt/validation \
@@ -199,27 +281,28 @@ curl -X PUT http://localhost:8000/schemas/receipt/validation \
   -d '{
     "rules": [{
       "id": "max_meal_amount",
-      "source": "data", "field": "total_amount",
-      "operator": "lte", "value": 75,
-      "condition": { "source": "enrichments", "field": "category", "operator": "eq", "value": "meals" },
-      "message": "Meal expense exceeds the $75 per-person limit"
+      "description": "Meal expenses must not exceed $50 per person"
     }]
   }'
 ```
 
-Supported operators: `lte`, `gte`, `lt`, `gt`, `eq`, `neq`, `in`, `not_in`.
+After updating rules, re-run validation on existing documents without re-extracting:
+
+```bash
+curl -X POST http://localhost:8000/schemas/receipt/documents/{id}/validate
+```
 
 ### Environment — `.env`
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...     # required
-GEMINI_API_KEY=AIza...           # optional (only for Google embeddings)
+OPENAI_API_KEY=sk-...            # optional (OpenAI embeddings)
+GEMINI_API_KEY=AIza...           # optional (Google embeddings)
 
 POSTGRES_DB=automation
 POSTGRES_USER=automation
 POSTGRES_PASSWORD=automation
 POSTGRES_PORT=5433
-
 DATABASE_URL=postgresql+asyncpg://automation:automation@localhost:5433/automation
 ```
 
@@ -233,49 +316,23 @@ DATABASE_URL=postgresql+asyncpg://automation:automation@localhost:5433/automatio
 | `GET` | `/schemas` | List all schemas |
 | `GET` | `/schemas/{key}` | Get schema by key |
 | `POST` | `/schemas/{key}/documents` | Upload a document (image or PDF) |
-| `GET` | `/schemas/{key}/documents` | List all extractions for a schema |
+| `GET` | `/schemas/{key}/documents` | List all extractions |
 | `GET` | `/schemas/{key}/documents/{id}` | Get a single extraction |
+| `DELETE` | `/schemas/{key}/documents/{id}` | Delete an extraction |
 | `GET` | `/schemas/{key}/validation` | Get current validation rules |
 | `PUT` | `/schemas/{key}/validation` | Replace validation rules |
-| `POST` | `/schemas/{key}/documents/{id}/validate` | Re-run validation on an existing extraction |
-| `GET` | `/config/llm` | Get LLM provider configuration |
+| `POST` | `/schemas/{key}/documents/{id}/validate` | Re-run validation |
+| `POST` | `/schemas/{key}/documents/search` | Semantic search |
+| `GET` | `/config/llm` | Get LLM configuration |
 | `GET` | `/health` | Health check |
 
-The full OpenAPI spec is split by domain under `api/` and served live at `http://localhost:8000/openapi.json`.
+Full OpenAPI spec under `api/`, served live at `http://localhost:8000/openapi.json`.
 
 ### Upload a receipt
 
 ```bash
 curl -X POST http://localhost:8000/schemas/receipt/documents \
   -F "file=@receipt.pdf"
-```
-
-### Example response
-
-```json
-{
-  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "schema_key": "receipt",
-  "file_name": "lunch.pdf",
-  "created_at": "2026-05-08T15:30:00Z",
-  "confidence": 0.95,
-  "data": {
-    "merchant_name": "Pho Saigon",
-    "date": "2026-05-07",
-    "total_amount": 87.50,
-    "currency": "USD",
-    "payment_method": "credit_card",
-    "line_items": [
-      { "description": "Pho Tai", "quantity": 2, "unit_price": 16.50, "total": 33.00 }
-    ]
-  },
-  "enrichments": {
-    "category": "meals",
-    "is_compliant": false,
-    "violations": ["Meal expense exceeds the $50 per-person limit"],
-    "status": "needs_review"
-  }
-}
 ```
 
 ---
@@ -291,8 +348,8 @@ curl -X POST http://localhost:8000/schemas/receipt/documents \
 ## Tests
 
 ```bash
-make test                   # run all unit tests
-pytest tests/ -v            # verbose
+make test          # all unit tests
+pytest tests/ -v   # verbose
 ```
 
 Tests are unit-only — no database, no LLM calls, no network. All providers are mocked.
@@ -302,55 +359,45 @@ Tests are unit-only — no database, no LLM calls, no network. All providers are
 ## Project structure
 
 ```
-api/
-  openapi.yaml              — root spec (aggregates domain files)
-  schemas.yaml              — schema management types + paths
-  documents.yaml            — document upload/retrieval types + paths
-  validation.yaml           — validation rule types + paths
-  config.yaml               — LLM config types + path
-  common.yaml               — shared: HTTPError, HealthResponse, SchemaKey param
-
+api/                          — OpenAPI spec (YAML, split by domain)
 agents/
-  extraction_agent.py       — Agent 1: document → structured data (LLM)
-  enrichment_agent.py       — Agent 2: data → semantic fields (LLM)
+  extraction_agent.py         — Agent 1: document → structured data
+  enrichment_agent.py         — Agent 2: data → semantic fields
   providers/
-    base.py                 — LLMProvider protocol
+    base.py                   — LLMProvider protocol
     anthropic_provider.py
     gemini_provider.py
-
+    openai_provider.py
 config/
-  llm_config.py             — typed provider/model config (LLMConfig)
-  settings.py               — reads .env, exposes get_agent_config() etc.
+  llm_config.py               — typed provider / model config
+  settings.py                 — .env loader
   schemas/
-    receipt.py              — receipt SchemaConfig (typed Python)
-  seed_schemas.py           — seeds config/schemas/*.py into the database
-
+    receipt.py                — receipt SchemaConfig
+  seed_schemas.py             — auto-discovers and seeds config/schemas/*.py
 db/
-  models.py                 — SQLAlchemy ORM (ExtractionSchemaORM, ExtractionORM, …)
-  repository.py             — SchemaRepository, ExtractionRepository
-  connection.py             — async engine + session factory
-  alembic.ini               — Alembic config
+  models.py                   — SQLAlchemy ORM
+  repository.py               — SchemaRepository, ExtractionRepository
+  connection.py               — async engine + session factory
   migrations/
-    versions/
-      0001_initial.py       — single squashed migration
-
+frontend/
+  src/
+    components/
+      DocumentsPage.tsx       — list all documents
+      ReceiptPage.tsx         — single extraction view
+      PolicyPage.tsx          — edit validation rules
+      PipelinePage.tsx        — view extraction schema + config
+      ChatPanel.tsx           — chat with documents
 models/
-  schemas.py                — Pydantic models (auto-generated from openapi.yaml)
-
+  schemas.py                  — Pydantic models (generated from OpenAPI spec)
 routers/
-  schemas.py                — POST/GET /schemas
-  documents.py              — POST/GET /schemas/{key}/documents
-  validation.py             — GET/PUT /schemas/{key}/validation, POST …/validate
-  config.py                 — GET /config/llm
-
+  schemas.py                  — /schemas
+  documents.py                — /schemas/{key}/documents
+  validation.py               — /schemas/{key}/validation
+  config.py                   — /config/llm
 services/
-  document_service.py       — orchestrates Agent 1 → Agent 2 → validation → storage
-  validation_engine.py      — deterministic rule evaluator
-  embedding.py              — field extraction + vector embedding
-
+  document_service.py         — orchestrates Agent 1 → 2 → 3 → storage
+  ai_validator.py             — per-rule LLM validation
+  embedding.py                — field extraction + vector embedding
 tests/
   unit/
-    test_validation_engine.py
-    test_embedding.py
-    test_enrichment_agent.py
 ```
